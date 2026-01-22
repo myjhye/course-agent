@@ -1,13 +1,27 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.routers import courses
 from app.config import settings
+from app.database import engine, Base
+from app.models import Course, Enrollment, Chat, AILog  # 모델 import 필수
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 시작할 때 테이블 생성
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    # 종료할 때 정리 (필요하면)
+
 
 app = FastAPI(
     title="Course Agent API",
     description="LLM 기반 강의 플랫폼 API",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS 설정
