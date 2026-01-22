@@ -4,6 +4,7 @@ export interface Course {
   category: string;
   description: string | null;
   curriculum: string | null;
+  thumbnail_url: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -34,5 +34,12 @@ export const courseApi = {
   deleteCourse: async (id: number): Promise<void> => {
     await apiClient.delete(`/api/courses/${id}`);
   },
+
+  generateCourseContent: async (id: number): Promise<Course> => {
+    const response = await apiClient.post<Course>(`/api/courses/${id}/generate`);
+    return response.data;
+  },
 };
+
+export const api = apiClient;
 

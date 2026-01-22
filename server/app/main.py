@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from app.routers import courses, enrollments
 from app.config import settings
 from app.database import engine, Base
@@ -36,6 +37,9 @@ app.add_middleware(
 # 라우터 등록
 app.include_router(courses.router, prefix="/api/courses", tags=["courses"])
 app.include_router(enrollments.router, prefix="/api/enrollments", tags=["enrollments"])
+
+# 정적 파일 서빙 (썸네일 이미지)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/health")

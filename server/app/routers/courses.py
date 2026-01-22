@@ -4,6 +4,7 @@ from typing import List
 from app.database import get_db
 from app.schemas.course import CourseCreate, CourseUpdate, CourseResponse
 from app.services.course_service import CourseService
+from app.services.ai.content_generator import generate_course_content
 from app.utils.exceptions import CourseNotFoundError
 
 router = APIRouter()
@@ -63,4 +64,30 @@ async def delete_course(
         await CourseService.delete_course(db, course_id)
     except CourseNotFoundError as e:
         raise e
+
+
+@router.post("/{course_id}/generate", response_model=CourseResponse)
+async def generate_course_ai_content(
+    course_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """AI로 강의 콘텐츠 자동 생성 (설명, 커리큘럼, 썸네일)"""
+    
+    # 강의 조회
+    course = await CourseService.get_course_by_id(db, course_id)
+    if not course:
+        raise CourseNotFoundError(course_id)
+    
+    # AI 콘텐츠 생성
+    generated = await generate_course_content(course.title, course.category)
+    
+    # DB 업데이트
+    update_data = CourseUpdate(
+        description=generated["description"],
+        curriculum=generated["curriculum"],
+        thumbnail_url=generated["thumbnail_url"]
+    )
+    
+    updated_course = await CourseService.update_course(db, course_id, update_data)
+    return updated_course
 
