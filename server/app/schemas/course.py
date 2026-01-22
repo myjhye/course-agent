@@ -8,6 +8,7 @@ class CourseBase(BaseModel):
     category: str
     description: Optional[str] = None
     curriculum: Optional[str] = None
+    thumbnail_url: Optional[str] = None  # 썸네일 추가
 
 
 class CourseCreate(CourseBase):
@@ -19,6 +20,7 @@ class CourseUpdate(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = None
     curriculum: Optional[str] = None
+    thumbnail_url: Optional[str] = None  # 썸네일 추가
 
 
 class CourseResponse(CourseBase):

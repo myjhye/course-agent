@@ -11,6 +11,7 @@ class Course(Base):
     category = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     curriculum = Column(Text, nullable=True)
+    thumbnail_url = Column(String(500), nullable=True)  # 썸네일 추가
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import courses
+from app.routers import courses, enrollments
 from app.config import settings
 from app.database import engine, Base
 from app.models import Course, Enrollment, Chat, AILog  # 모델 import 필수
@@ -35,6 +35,7 @@ app.add_middleware(
 
 # 라우터 등록
 app.include_router(courses.router, prefix="/api/courses", tags=["courses"])
+app.include_router(enrollments.router, prefix="/api/enrollments", tags=["enrollments"])
 
 
 @app.get("/health")
