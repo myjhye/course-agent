@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import CoursesPage from './pages/CoursesPage';
 import CourseDetailPage from './pages/CourseDetailPage';
+import CourseCreatePage from './pages/CourseCreatePage';
 import ChatPage from './pages/ChatPage';
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/courses" element={<CoursesPage />} />
+        <Route path="/courses/new" element={<CourseCreatePage />} />
         <Route path="/courses/:id" element={<CourseDetailPage />} />
         <Route path="/chat" element={<ChatPage />} />
       </Routes>

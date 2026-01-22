@@ -2,12 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.database import get_db
-from app.schemas.course import CourseCreate, CourseUpdate, CourseResponse
+from app.schemas.course import CourseCreate, CourseUpdate, CourseResponse, CourseDraftRequest, CourseDraftResponse
 from app.services.course_service import CourseService
-from app.services.ai.content_generator import generate_course_content
+from app.services.ai.content_generator import generate_course_draft
 from app.utils.exceptions import CourseNotFoundError
 
 router = APIRouter()
+
+
+@router.post("/draft", response_model=CourseDraftResponse)
+async def create_course_draft(
+    draft_request: CourseDraftRequest
+):
+    """AI로 강의 초안 생성 (DB 저장 없음)"""
+    draft = await generate_course_draft(draft_request.topic)
+    return CourseDraftResponse(**draft)
 
 
 @router.post("/", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
@@ -65,29 +74,8 @@ async def delete_course(
     except CourseNotFoundError as e:
         raise e
 
-
-@router.post("/{course_id}/generate", response_model=CourseResponse)
-async def generate_course_ai_content(
-    course_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """AI로 강의 콘텐츠 자동 생성 (설명, 커리큘럼, 썸네일)"""
-    
-    # 강의 조회
-    course = await CourseService.get_course_by_id(db, course_id)
-    if not course:
-        raise CourseNotFoundError(course_id)
-    
-    # AI 콘텐츠 생성
-    generated = await generate_course_content(course.title, course.category)
-    
-    # DB 업데이트
-    update_data = CourseUpdate(
-        description=generated["description"],
-        curriculum=generated["curriculum"],
-        thumbnail_url=generated["thumbnail_url"]
-    )
-    
-    updated_course = await CourseService.update_course(db, course_id, update_data)
-    return updated_course
+# 기존 POST /{id}/generate 엔드포인트는 Draft API로 대체됨
+# @router.post("/{course_id}/generate", response_model=CourseResponse)
+# async def generate_course_ai_content(...):
+#     ...
 

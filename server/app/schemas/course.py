@@ -30,3 +30,15 @@ class CourseResponse(CourseBase):
     
     model_config = ConfigDict(from_attributes=True)
 
+
+class CourseDraftRequest(BaseModel):
+    topic: str
+
+
+class CourseDraftResponse(BaseModel):
+    title: str
+    category: str
+    description: str
+    curriculum: str
+    thumbnail_url: Optional[str] = None
+

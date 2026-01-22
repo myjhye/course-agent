@@ -14,6 +14,7 @@ export interface CourseCreate {
   category: string;
   description?: string | null;
   curriculum?: string | null;
+  thumbnail_url?: string | null;
 }
 
 export interface CourseUpdate {
