@@ -5,6 +5,7 @@ from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.models.feedback import Feedback
 from app.models.ai_log import AILog
 from app.models.chat import Chat
+from app.models.faq import FAQ
 
 __all__ = [
     "Instructor",
@@ -19,4 +20,5 @@ __all__ = [
     "Feedback",
     "AILog",
     "Chat",
+    "FAQ",
 ]
