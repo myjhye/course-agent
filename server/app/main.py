@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # 운영자 라우터
+from app.routers.admin.dashboard import router as admin_dashboard_router
 from app.routers.admin.instructors import router as admin_instructors_router
 from app.routers.admin.lessons import router as admin_lessons_router
 from app.routers.admin.enrollments import router as admin_enrollments_router
@@ -48,6 +49,7 @@ app.add_middleware(
 )
 
 # 라우터 등록
+app.include_router(admin_dashboard_router)
 app.include_router(admin_instructors_router)
 app.include_router(admin_lessons_router)
 app.include_router(admin_enrollments_router)

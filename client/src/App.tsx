@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 // Admin pages
 import AdminLayout from './pages/admin/AdminLayout';
+import DashboardPage from './pages/admin/DashboardPage';
 import LessonsPage from './pages/admin/LessonsPage';
 import LessonCreatePage from './pages/admin/LessonCreatePage';
 import LessonDetailPage from './pages/admin/LessonDetailPage';
@@ -24,7 +25,8 @@ function App() {
 
         {/* 운영자 */}
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="/admin/lessons" replace />} />
+          <Route index element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="dashboard" element={<DashboardPage />} />
           <Route path="lessons" element={<LessonsPage />} />
           <Route path="lessons/new" element={<LessonCreatePage />} />
           <Route path="lessons/:id" element={<LessonDetailPage />} />

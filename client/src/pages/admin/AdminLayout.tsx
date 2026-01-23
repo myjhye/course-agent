@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 
 const navItems = [
+  { path: '/admin/dashboard', label: '대시보드' },
   { path: '/admin/lessons', label: '강습 관리' },
   { path: '/admin/instructors', label: '강사 관리' },
   { path: '/admin/enrollments', label: '수강 관리' },
