@@ -10,10 +10,16 @@ function HomePage() {
         </p>
         <div className="space-x-4">
           <Link
-            to="/courses"
+            to="/lessons"
             className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
           >
-            강의 목록 보기
+            강습 목록 보기
+          </Link>
+          <Link
+            to="/admin"
+            className="inline-block bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700"
+          >
+            관리자 화면
           </Link>
           <Link
             to="/chat"

@@ -34,6 +34,7 @@ class LessonResponse(BaseModel):
     status: LessonStatus
     created_at: datetime
     updated_at: datetime
+    active_content: Optional["LessonContentResponse"] = None  # 공개 목록용 썸네일 포함
 
     model_config = ConfigDict(from_attributes=True)
 

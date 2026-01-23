@@ -37,15 +37,31 @@ class LessonService:
         limit: int = 20,
         sport_type: Optional[str] = None,
         difficulty: Optional[str] = None
-    ) -> List[Lesson]:
-        query = select(Lesson).where(Lesson.status == LessonStatus.PUBLISHED)
+    ) -> List[dict]:
+        query = (
+            select(Lesson)
+            .options(
+                selectinload(Lesson.contents),
+                selectinload(Lesson.instructor)
+            )
+            .where(Lesson.status == LessonStatus.PUBLISHED)
+        )
         if sport_type:
             query = query.where(Lesson.sport_type == sport_type)
         if difficulty:
             query = query.where(Lesson.difficulty == difficulty)
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
-        return result.scalars().all()
+        lessons = result.scalars().all()
+        
+        # active_content 포함하여 반환
+        return [
+            {
+                **lesson.__dict__,
+                "active_content": next((c for c in lesson.contents if c.is_active), None)
+            }
+            for lesson in lessons
+        ]
     
     @staticmethod
     async def get_lesson_by_id(db: AsyncSession, lesson_id: int) -> Optional[Lesson]:
