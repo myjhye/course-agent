@@ -8,6 +8,7 @@ import type {
   EnrollmentDetail,
   EnrollmentCreateRequest,
   Feedback,
+  Recommendation,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -79,6 +80,14 @@ export const myEnrollmentApi = {
   create: (data: EnrollmentCreateRequest) =>
     api.post<EnrollmentDetail>('/api/my/enrollments/', data),
   cancel: (id: number) => api.delete(`/api/my/enrollments/${id}`),
+};
+
+// ===== 추천 (수강생) =====
+export const myRecommendationApi = {
+  getRecommendations: (studentName: string, limit: number = 3) =>
+    api.get<Recommendation[]>('/api/my/recommendations/', {
+      params: { student_name: studentName, limit }
+    }),
 };
 
 export default api;

@@ -95,3 +95,20 @@ export interface EnrollmentCreateRequest {
   lesson_id: number;
   student_name: string;
 }
+
+// 추천
+export interface RecommendedLesson {
+  id: number;
+  title: string;
+  sport_type: string;
+  target_audience: string;
+  difficulty: string;
+  instructor_name: string | null;
+  thumbnail_url: string | null;
+}
+
+export interface Recommendation {
+  lesson: RecommendedLesson;
+  reason: string;
+  reason_type: string;
+}

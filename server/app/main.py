@@ -12,6 +12,7 @@ from app.routers.admin.enrollments import router as admin_enrollments_router
 # 공개/수강생 라우터
 from app.routers.lessons import router as lessons_router
 from app.routers.my.enrollments import router as my_enrollments_router
+from app.routers.my.recommendations import router as my_recommendations_router
 
 # 채팅
 from app.routers.chat import router as chat_router
@@ -52,6 +53,7 @@ app.include_router(admin_lessons_router)
 app.include_router(admin_enrollments_router)
 app.include_router(lessons_router)
 app.include_router(my_enrollments_router)
+app.include_router(my_recommendations_router)
 app.include_router(chat_router)
 
 # 정적 파일 서빙 (썸네일 이미지)
