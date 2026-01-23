@@ -22,13 +22,28 @@ class LessonService:
         skip: int = 0, 
         limit: int = 20, 
         status: Optional[str] = None
-    ) -> List[Lesson]:
-        query = select(Lesson)
+    ) -> List[dict]:
+        query = (
+            select(Lesson)
+            .options(
+                selectinload(Lesson.contents),
+                selectinload(Lesson.instructor)
+            )
+        )
         if status:
             query = query.where(Lesson.status == status)
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
-        return result.scalars().all()
+        lessons = result.scalars().all()
+        
+        # active_content 포함하여 반환
+        return [
+            {
+                **lesson.__dict__,
+                "active_content": next((c for c in lesson.contents if c.is_active), None)
+            }
+            for lesson in lessons
+        ]
     
     @staticmethod
     async def get_published_lessons(

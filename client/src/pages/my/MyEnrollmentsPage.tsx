@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { myEnrollmentApi } from '../../services/api';
 import type { EnrollmentDetail } from '../../types';
-import { ENROLLMENT_STATUS_LABELS } from '../../constants/labels';
+import { SPORT_LABELS, DIFFICULTY_LABELS, ENROLLMENT_STATUS_LABELS } from '../../constants/labels';
 
 export default function MyEnrollmentsPage() {
   const [studentName] = useState('홍길동'); // 임시: 나중에 인증으로 교체
@@ -59,8 +59,8 @@ export default function MyEnrollmentsPage() {
                     {enrollment.lesson_title}
                   </h2>
                   <div className="flex items-center gap-4 text-sm text-gray-500 mb-2">
-                    <span>종목: {enrollment.lesson_sport_type}</span>
-                    <span>난이도: {enrollment.lesson_difficulty}</span>
+                    <span>종목: {SPORT_LABELS[enrollment.lesson_sport_type] || enrollment.lesson_sport_type}</span>
+                    <span>난이도: {DIFFICULTY_LABELS[enrollment.lesson_difficulty] || enrollment.lesson_difficulty}</span>
                   </div>
                   <div className="flex items-center gap-4 mt-4">
                     <span

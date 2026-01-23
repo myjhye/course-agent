@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { instructorApi } from '../../services/api';
 import type { Instructor } from '../../types';
+import { SPORT_LABELS } from '../../constants/labels';
 
 export default function InstructorsPage() {
   const [instructors, setInstructors] = useState<Instructor[]>([]);
@@ -55,7 +56,7 @@ export default function InstructorsPage() {
                 <tr key={instructor.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 font-medium">{instructor.name}</td>
                   <td className="px-6 py-4 text-sm text-gray-500">
-                    {instructor.specialty || '-'}
+                    {instructor.specialty ? (SPORT_LABELS[instructor.specialty] || instructor.specialty) : '-'}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {instructor.bio || '-'}

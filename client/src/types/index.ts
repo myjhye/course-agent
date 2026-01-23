@@ -25,6 +25,7 @@ export interface Lesson {
   status: LessonStatus;
   created_at: string;
   updated_at: string;
+  active_content?: LessonContent | null; // 목록용 썸네일 포함
 }
 
 export interface LessonDetail extends Lesson {

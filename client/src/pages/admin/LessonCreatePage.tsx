@@ -2,30 +2,22 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminLessonApi, instructorApi } from '../../services/api';
 import type { Instructor, LessonCreateRequest, SportType, TargetAudience, Difficulty } from '../../types';
+import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
 
-const SPORT_OPTIONS: { value: SportType; label: string }[] = [
-  { value: 'swimming', label: '수영' },
-  { value: 'tennis', label: '테니스' },
-  { value: 'golf', label: '골프' },
-  { value: 'fitness', label: '피트니스' },
-  { value: 'yoga', label: '요가' },
-  { value: 'pilates', label: '필라테스' },
-  { value: 'other', label: '기타' },
-];
+const SPORT_OPTIONS: { value: SportType; label: string }[] = Object.entries(SPORT_LABELS).map(([value, label]) => ({
+  value: value as SportType,
+  label,
+}));
 
-const TARGET_OPTIONS: { value: TargetAudience; label: string }[] = [
-  { value: 'adult', label: '성인' },
-  { value: 'child', label: '어린이' },
-  { value: 'senior', label: '시니어' },
-  { value: 'all', label: '전체' },
-];
+const TARGET_OPTIONS: { value: TargetAudience; label: string }[] = Object.entries(TARGET_LABELS).map(([value, label]) => ({
+  value: value as TargetAudience,
+  label,
+}));
 
-const DIFFICULTY_OPTIONS: { value: Difficulty; label: string }[] = [
-  { value: 'beginner', label: '입문' },
-  { value: 'elementary', label: '초급' },
-  { value: 'intermediate', label: '중급' },
-  { value: 'advanced', label: '고급' },
-];
+const DIFFICULTY_OPTIONS: { value: Difficulty; label: string }[] = Object.entries(DIFFICULTY_LABELS).map(([value, label]) => ({
+  value: value as Difficulty,
+  label,
+}));
 
 export default function LessonCreatePage() {
   const navigate = useNavigate();

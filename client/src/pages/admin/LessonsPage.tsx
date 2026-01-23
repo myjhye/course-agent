@@ -4,6 +4,8 @@ import { adminLessonApi } from '../../services/api';
 import type { Lesson } from '../../types';
 import { SPORT_LABELS, DIFFICULTY_LABELS, STATUS_LABELS } from '../../constants/labels';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,9 @@ export default function LessonsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  썸네일
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   강습명
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -64,21 +69,45 @@ export default function LessonsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {lessons.map((lesson) => (
-                <tr key={lesson.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <Link
-                      to={`/admin/lessons/${lesson.id}`}
-                      className="text-blue-600 hover:underline font-medium"
-                    >
-                      {lesson.title}
-                    </Link>
-                  </td>
+              {lessons.map((lesson) => {
+                const thumbnailUrl = lesson.active_content?.thumbnail_url
+                  ? `${API_BASE}${lesson.active_content.thumbnail_url}`
+                  : null;
+                
+                return (
+                  <tr key={lesson.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4">
+                      {thumbnailUrl ? (
+                        <img
+                          src={thumbnailUrl}
+                          alt={lesson.title}
+                          className="w-32 h-20 object-cover rounded border"
+                        />
+                      ) : (
+                        <div className="w-32 h-20 bg-gray-200 rounded flex items-center justify-center text-4xl">
+                          {lesson.sport_type === 'swimming' && '🏊'}
+                          {lesson.sport_type === 'tennis' && '🎾'}
+                          {lesson.sport_type === 'golf' && '⛳'}
+                          {lesson.sport_type === 'fitness' && '💪'}
+                          {lesson.sport_type === 'yoga' && '🧘'}
+                          {lesson.sport_type === 'pilates' && '🤸'}
+                          {lesson.sport_type === 'other' && '🏃'}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <Link
+                        to={`/admin/lessons/${lesson.id}`}
+                        className="text-blue-600 hover:underline font-medium"
+                      >
+                        {lesson.title}
+                      </Link>
+                    </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {SPORT_LABELS[lesson.sport_type] || lesson.sport_type}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
-                    {lesson.difficulty}
+                    {DIFFICULTY_LABELS[lesson.difficulty] || lesson.difficulty}
                   </td>
                   <td className="px-6 py-4">
                     <span
@@ -97,7 +126,8 @@ export default function LessonsPage() {
                     {new Date(lesson.created_at).toLocaleDateString()}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
