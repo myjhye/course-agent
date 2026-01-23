@@ -3,10 +3,22 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from app.routers import courses, enrollments
+
+# 운영자 라우터
+from app.routers.admin.instructors import router as admin_instructors_router
+from app.routers.admin.lessons import router as admin_lessons_router
+from app.routers.admin.enrollments import router as admin_enrollments_router
+
+# 공개/수강생 라우터
+from app.routers.lessons import router as lessons_router
+from app.routers.my.enrollments import router as my_enrollments_router
+
+# 채팅
+from app.routers.chat import router as chat_router
+
 from app.config import settings
 from app.database import engine, Base
-from app.models import Course, Enrollment, Chat, AILog  # 모델 import 필수
+from app.models import Instructor, Lesson, LessonContent, Enrollment, Feedback, AILog, Chat  # 모델 import 필수
 
 
 @asynccontextmanager
@@ -21,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Course Agent API",
     description="LLM 기반 강의 플랫폼 API",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -35,8 +47,12 @@ app.add_middleware(
 )
 
 # 라우터 등록
-app.include_router(courses.router, prefix="/api/courses", tags=["courses"])
-app.include_router(enrollments.router, prefix="/api/enrollments", tags=["enrollments"])
+app.include_router(admin_instructors_router)
+app.include_router(admin_lessons_router)
+app.include_router(admin_enrollments_router)
+app.include_router(lessons_router)
+app.include_router(my_enrollments_router)
+app.include_router(chat_router)
 
 # 정적 파일 서빙 (썸네일 이미지)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -44,7 +60,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "healthy"}
 
 
 @app.exception_handler(Exception)

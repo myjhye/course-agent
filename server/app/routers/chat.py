@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 
-router = APIRouter()
+router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 # TODO: 구현 예정

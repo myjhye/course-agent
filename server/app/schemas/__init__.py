@@ -1,14 +1,29 @@
-from app.schemas.course import CourseCreate, CourseUpdate, CourseResponse
-from app.schemas.enrollment import EnrollmentCreate, EnrollmentResponse
+from app.schemas.instructor import InstructorCreate, InstructorResponse
+from app.schemas.lesson import (
+    LessonCreate, LessonUpdate, LessonResponse, LessonDetailResponse,
+    LessonContentResponse, GenerateContentRequest, UpdateContentRequest, RegenerateWeekRequest
+)
+from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate, EnrollmentResponse, EnrollmentDetailResponse
+from app.schemas.feedback import FeedbackResponse, FeedbackUpdate
 from app.schemas.chat import ChatCreate, ChatResponse
 
 __all__ = [
-    "CourseCreate",
-    "CourseUpdate",
-    "CourseResponse",
+    "InstructorCreate",
+    "InstructorResponse",
+    "LessonCreate",
+    "LessonUpdate",
+    "LessonResponse",
+    "LessonDetailResponse",
+    "LessonContentResponse",
+    "GenerateContentRequest",
+    "UpdateContentRequest",
+    "RegenerateWeekRequest",
     "EnrollmentCreate",
+    "EnrollmentUpdate",
     "EnrollmentResponse",
+    "EnrollmentDetailResponse",
+    "FeedbackResponse",
+    "FeedbackUpdate",
     "ChatCreate",
     "ChatResponse",
 ]
-

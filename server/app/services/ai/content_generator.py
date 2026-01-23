@@ -175,3 +175,96 @@ Requirements:
         "curriculum": curriculum,
         "thumbnail_url": thumbnail_url
     }
+
+
+async def generate_lesson_content(db, lesson) -> dict:
+    """강습 콘텐츠 생성 (Lesson 모델 기반)"""
+    from app.models.lesson_content import LessonContent
+    
+    # 1. 소개 문구 생성
+    introduction_prompt = f"""
+다음 강습의 매력적인 소개 문구를 작성해주세요.
+
+강습 제목: {lesson.title}
+종목: {lesson.sport_type.value}
+대상: {lesson.target_audience.value}
+난이도: {lesson.difficulty.value}
+
+요구사항:
+- 3~4문장으로 작성
+- 수강 대상과 기대 효과 포함
+- 전문적이면서도 친근한 톤
+"""
+    introduction = await generate_text(introduction_prompt)
+    
+    # 2. 커리큘럼 생성 (JSON 형식)
+    curriculum_prompt = f"""
+다음 강습의 커리큘럼을 JSON 형식으로 작성해주세요.
+
+강습 제목: {lesson.title}
+종목: {lesson.sport_type.value}
+대상: {lesson.target_audience.value}
+난이도: {lesson.difficulty.value}
+
+요구사항:
+- 주차별로 구성 (4~8주)
+- 각 주차에 제목과 주요 내용 포함
+- JSON 형식: {{"weeks": [{{"week": 1, "title": "...", "topics": ["...", "..."]}}, ...]}}
+
+JSON만 반환하세요.
+"""
+    curriculum_text = await generate_text(curriculum_prompt)
+    
+    # JSON 파싱 시도
+    import json
+    try:
+        curriculum = json.loads(curriculum_text)
+    except:
+        # 파싱 실패 시 기본 구조
+        curriculum = {"weeks": [{"week": 1, "title": "기본기", "topics": ["기초 동작"]}]}
+    
+    # 3. 썸네일 생성
+    thumbnail_url = None
+    try:
+        thumbnail_prompt = f"""
+Create a professional sports lesson thumbnail image.
+Lesson title: "{lesson.title}"
+Sport type: {lesson.sport_type.value}
+Target: {lesson.target_audience.value}
+Difficulty: {lesson.difficulty.value}
+Requirements: High quality, 16:9 aspect ratio, No text.
+"""
+        thumbnail_url = generate_image(thumbnail_prompt)
+    except Exception as e:
+        print(f"썸네일 오류: {e}")
+        thumbnail_url = None
+    
+    # LessonContent 생성
+    # 기존 활성 콘텐츠 비활성화
+    from sqlalchemy import select, and_, update
+    await db.execute(
+        update(LessonContent)
+        .where(and_(LessonContent.lesson_id == lesson.id, LessonContent.is_active == True))
+        .values(is_active=False)
+    )
+    
+    # 새 버전 번호 계산
+    max_version_result = await db.execute(
+        select(LessonContent).where(LessonContent.lesson_id == lesson.id)
+    )
+    max_version = max([c.version for c in max_version_result.scalars().all()], default=0)
+    
+    # 새 콘텐츠 생성
+    new_content = LessonContent(
+        lesson_id=lesson.id,
+        introduction=introduction,
+        curriculum=curriculum,
+        thumbnail_url=thumbnail_url,
+        version=max_version + 1,
+        is_active=True
+    )
+    db.add(new_content)
+    await db.commit()
+    await db.refresh(new_content)
+    
+    return new_content

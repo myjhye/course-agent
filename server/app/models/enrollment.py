@@ -1,19 +1,30 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Float
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.database import Base
+import enum
+
+
+class EnrollmentStatus(str, enum.Enum):
+    ENROLLED = "enrolled"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
 
 
 class Enrollment(Base):
     __tablename__ = "enrollments"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)  # 일단 하드코딩용
-    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
-    status = Column(String(20), default="enrolled")  # enrolled, in_progress, completed
+    student_name = Column(String(100), nullable=False)  # user_id 대신 이름
+    lesson_id = Column(Integer, ForeignKey("lessons.id"), nullable=False)
+    status = Column(Enum(EnrollmentStatus), nullable=False, default=EnrollmentStatus.ENROLLED)
+    attendance_rate = Column(Float, nullable=True, default=0.0)  # 출석률 (0~100)
+    completion_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # 관계 설정
-    course = relationship("Course", backref="enrollments")
+
+    # Relationships
+    lesson = relationship("Lesson", back_populates="enrollments")
+    feedback = relationship("Feedback", back_populates="enrollment", uselist=False)
 
