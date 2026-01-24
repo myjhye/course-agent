@@ -142,7 +142,8 @@ class LessonService:
         page_size: int = 12,
         sport_type: Optional[str] = None,
         target_audience: Optional[str] = None,
-        difficulty: Optional[str] = None
+        difficulty: Optional[str] = None,
+        search: Optional[str] = None
     ) -> dict:
         """발행된 강습 목록 (페이징, 최신순)"""
         
@@ -152,6 +153,12 @@ class LessonService:
         ).where(Lesson.status == LessonStatus.PUBLISHED)
         
         count_query = select(func.count(Lesson.id)).where(Lesson.status == LessonStatus.PUBLISHED)
+        
+        # 검색어 필터
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.where(Lesson.title.ilike(search_pattern))
+            count_query = count_query.where(Lesson.title.ilike(search_pattern))
         
         if sport_type:
             query = query.where(Lesson.sport_type == sport_type)

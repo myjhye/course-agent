@@ -1,14 +1,24 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
 const STUDENT_NAME = '홍길동';
 
 export default function Header() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleSearch = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/lessons?search=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery('');
+      setShowMobileMenu(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-gray-200">
@@ -25,7 +35,7 @@ export default function Header() {
           </Link>
 
           {/* 검색바 (데스크탑) */}
-          <div className="hidden md:flex flex-1 max-w-md mx-8">
+          <form onSubmit={handleSearch} className="hidden md:flex flex-1 max-w-md mx-8">
             <div className="relative w-full">
               <input
                 type="text"
@@ -34,21 +44,21 @@ export default function Header() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              <button
+                type="submit"
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                  />
+                </svg>
+              </button>
             </div>
-          </div>
+          </form>
 
           {/* 네비게이션 (데스크탑) */}
           <nav className="hidden md:flex items-center gap-6">
@@ -109,15 +119,19 @@ export default function Header() {
       {showMobileMenu && (
         <div className="md:hidden border-t border-gray-200 bg-white">
           <div className="px-4 py-3 space-y-3">
-            <input
-              type="text"
-              placeholder="검색"
-              className="w-full px-4 py-2 border rounded-lg text-sm"
-            />
-            <Link to="/lessons" className="block py-2 text-gray-700">강습 둘러보기</Link>
-            <Link to="/my/enrollments" className="block py-2 text-gray-700">내 강습</Link>
-            <Link to="/chat" className="block py-2 text-gray-700">AI 상담</Link>
-            <Link to="/admin/dashboard" className="block py-2 text-gray-500">관리자</Link>
+            <form onSubmit={handleSearch}>
+              <input
+                type="text"
+                placeholder="강습 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-4 py-2 border rounded-lg text-sm"
+              />
+            </form>
+            <Link to="/lessons" onClick={() => setShowMobileMenu(false)} className="block py-2 text-gray-700">강습 둘러보기</Link>
+            <Link to="/my/enrollments" onClick={() => setShowMobileMenu(false)} className="block py-2 text-gray-700">내 강습</Link>
+            <Link to="/chat" onClick={() => setShowMobileMenu(false)} className="block py-2 text-gray-700">AI 상담</Link>
+            <Link to="/admin/dashboard" onClick={() => setShowMobileMenu(false)} className="block py-2 text-gray-500">관리자</Link>
           </div>
         </div>
       )}

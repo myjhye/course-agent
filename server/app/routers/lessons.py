@@ -18,11 +18,12 @@ async def get_published_lessons(
     sport_type: Optional[str] = None,
     target_audience: Optional[str] = None,
     difficulty: Optional[str] = None,
+    search: Optional[str] = Query(None, description="검색어 (제목 검색)"),
     db: AsyncSession = Depends(get_db)
 ):
     """발행된 강습 목록 (페이징)"""
     result = await LessonService.get_published_lessons_paginated(
-        db, page, page_size, sport_type, target_audience, difficulty
+        db, page, page_size, sport_type, target_audience, difficulty, search
     )
     
     # dict 변환 및 datetime ISO 형식 변환

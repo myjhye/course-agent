@@ -40,20 +40,26 @@ export default function LessonsPage() {
     sport_type?: string;
     target_audience?: string;
     difficulty?: string;
+    search?: string;
   }>(() => {
     const initialFilters: {
       sport_type?: string;
       target_audience?: string;
       difficulty?: string;
+      search?: string;
     } = {};
     const sport = searchParams.get('sport');
     const target = searchParams.get('target');
     const difficulty = searchParams.get('difficulty');
+    const search = searchParams.get('search');
     if (sport) initialFilters.sport_type = sport;
     if (target) initialFilters.target_audience = target;
     if (difficulty) initialFilters.difficulty = difficulty;
+    if (search) initialFilters.search = search;
     return initialFilters;
   });
+  
+  const [searchInput, setSearchInput] = useState(searchParams.get('search') || '');
 
   useEffect(() => {
     loadLessons();
@@ -68,6 +74,7 @@ export default function LessonsPage() {
         sport_type?: string;
         target_audience?: string;
         difficulty?: string;
+        search?: string;
       } = {
         page,
         page_size: 9,
@@ -76,6 +83,7 @@ export default function LessonsPage() {
       if (filters.sport_type) params.sport_type = filters.sport_type;
       if (filters.target_audience) params.target_audience = filters.target_audience;
       if (filters.difficulty) params.difficulty = filters.difficulty;
+      if (filters.search) params.search = filters.search;
 
       const res = await lessonApi.getPublished(params);
       setLessons(res.data.items);
@@ -109,8 +117,38 @@ export default function LessonsPage() {
     setSearchParams(searchParams);
   };
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchInput.trim()) {
+      setFilters((prev) => ({ ...prev, search: searchInput.trim() }));
+      searchParams.set('search', searchInput.trim());
+    } else {
+      setFilters((prev) => {
+        const newFilters = { ...prev };
+        delete newFilters.search;
+        return newFilters;
+      });
+      searchParams.delete('search');
+    }
+    setSearchParams(searchParams);
+    setPage(1);
+  };
+
+  const clearSearch = () => {
+    setSearchInput('');
+    setFilters((prev) => {
+      const newFilters = { ...prev };
+      delete newFilters.search;
+      return newFilters;
+    });
+    searchParams.delete('search');
+    setSearchParams(searchParams);
+    setPage(1);
+  };
+
   const clearFilters = () => {
     setFilters({});
+    setSearchInput('');
     setPage(1);
     setSearchParams({});
   };
@@ -140,6 +178,9 @@ export default function LessonsPage() {
                 onFilterChange={handleFilterChange}
                 onClearFilters={clearFilters}
                 hasFilters={hasFilters}
+                searchInput={searchInput}
+                setSearchInput={setSearchInput}
+                onSearch={handleSearch}
               />
             </div>
           </aside>
@@ -168,6 +209,12 @@ export default function LessonsPage() {
             {hasFilters && (
               <div className="flex flex-wrap items-center gap-2 mb-4">
                 <span className="text-sm text-gray-500">적용된 필터:</span>
+                {filters.search && (
+                  <FilterTag
+                    label={`🔍 "${filters.search}"`}
+                    onRemove={clearSearch}
+                  />
+                )}
                 {filters.sport_type && (
                   <FilterTag
                     label={`${SPORT_CONFIG[filters.sport_type]?.icon || ''} ${SPORT_LABELS[filters.sport_type]}`}
@@ -273,14 +320,41 @@ function FilterSidebar({
   onFilterChange,
   onClearFilters,
   hasFilters,
+  searchInput,
+  setSearchInput,
+  onSearch,
 }: {
-  filters: { sport_type?: string; target_audience?: string; difficulty?: string };
+  filters: { sport_type?: string; target_audience?: string; difficulty?: string; search?: string };
   onFilterChange: (key: 'sport_type' | 'target_audience' | 'difficulty', value: string) => void;
   onClearFilters: () => void;
   hasFilters: boolean;
+  searchInput: string;
+  setSearchInput: (value: string) => void;
+  onSearch: (e: React.FormEvent) => void;
 }) {
   return (
     <div className="space-y-6">
+      {/* 검색 */}
+      <form onSubmit={onSearch}>
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="강습 검색..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
+          />
+          <button
+            type="submit"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+        </div>
+      </form>
+
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <h3 className="font-bold text-gray-900">필터</h3>
