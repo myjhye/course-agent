@@ -12,7 +12,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [showNameInput, setShowNameInput] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // 새 세션 ID 생성
@@ -20,8 +20,10 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
-    // 메시지 추가 시 스크롤
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // 메시지 추가 시 채팅 영역 내부만 스크롤
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleStartChat = () => {
@@ -138,7 +140,7 @@ export default function ChatPage() {
       </div>
 
       {/* 메시지 영역 */}
-      <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto bg-gray-50">
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           {/* 초기 안내 */}
           {messages.length === 0 && (
@@ -220,7 +222,6 @@ export default function ChatPage() {
             </div>
           )}
 
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
