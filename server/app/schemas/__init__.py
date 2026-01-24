@@ -5,7 +5,7 @@ from app.schemas.lesson import (
 )
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentUpdate, EnrollmentResponse, EnrollmentDetailResponse
 from app.schemas.feedback import FeedbackResponse, FeedbackUpdate
-from app.schemas.chat import ChatCreate, ChatResponse
+from app.schemas.chat import ChatRequest, ChatResponse, ChatMessageResponse, ChatSessionResponse, ChatSessionDetailResponse
 
 __all__ = [
     "InstructorCreate",
@@ -24,6 +24,9 @@ __all__ = [
     "EnrollmentDetailResponse",
     "FeedbackResponse",
     "FeedbackUpdate",
-    "ChatCreate",
+    "ChatRequest",
     "ChatResponse",
+    "ChatMessageResponse",
+    "ChatSessionResponse",
+    "ChatSessionDetailResponse",
 ]

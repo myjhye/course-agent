@@ -1,11 +1,22 @@
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from google import genai
 from app.config import settings
 import os
 import uuid
 
-# OpenAI 클라이언트
+# OpenAI 비동기 클라이언트 (기존 함수용)
 openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+# OpenAI 동기 클라이언트 (채팅용)
+_openai_client = None
+
+
+def get_openai_client() -> OpenAI:
+    """OpenAI 클라이언트 반환 (채팅용 - 동기)"""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = OpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 # Gemini 클라이언트
 gemini_client = genai.Client(api_key=settings.gemini_api_key)

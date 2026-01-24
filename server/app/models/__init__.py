@@ -4,7 +4,7 @@ from app.models.lesson_content import LessonContent
 from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.models.feedback import Feedback
 from app.models.ai_log import AILog
-from app.models.chat import Chat
+from app.models.chat import ChatSession, ChatMessage
 from app.models.faq import FAQ
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "EnrollmentStatus",
     "Feedback",
     "AILog",
-    "Chat",
+    "ChatSession",
+    "ChatMessage",
     "FAQ",
 ]

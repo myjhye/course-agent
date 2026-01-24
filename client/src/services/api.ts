@@ -20,6 +20,15 @@ const api = axios.create({
   },
 });
 
+// 페이징 응답 타입
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 // ===== 강사 (운영자) =====
 export const instructorApi = {
   getAll: () => api.get<Instructor[]>('/api/admin/instructors/'),
@@ -31,8 +40,8 @@ export const instructorApi = {
 
 // ===== 강습 (운영자) =====
 export const adminLessonApi = {
-  getAll: (params?: { status?: string; skip?: number; limit?: number }) =>
-    api.get<Lesson[]>('/api/admin/lessons/', { params }),
+  getAll: (params?: { page?: number; page_size?: number; status?: string }) =>
+    api.get<PaginatedResponse<Lesson>>('/api/admin/lessons/', { params }),
   getById: (id: number) => api.get<LessonDetail>(`/api/admin/lessons/${id}`),
   create: (data: LessonCreateRequest) =>
     api.post<Lesson>('/api/admin/lessons/', data),
@@ -56,15 +65,15 @@ export const adminLessonApi = {
 
 // ===== 강습 (공개) =====
 export const lessonApi = {
-  getPublished: (params?: { sport_type?: string; difficulty?: string }) =>
-    api.get<Lesson[]>('/api/lessons/', { params }),
+  getPublished: (params?: { page?: number; page_size?: number; sport_type?: string; difficulty?: string }) =>
+    api.get<PaginatedResponse<Lesson>>('/api/lessons/', { params }),
   getById: (id: number) => api.get<LessonDetail>(`/api/lessons/${id}`),
 };
 
 // ===== 수강 (운영자) =====
 export const adminEnrollmentApi = {
-  getAll: (params?: { status?: string; lesson_id?: number }) =>
-    api.get<EnrollmentDetail[]>('/api/admin/enrollments/', { params }),
+  getAll: (params?: { page?: number; page_size?: number; status?: string; lesson_id?: number }) =>
+    api.get<PaginatedResponse<EnrollmentDetail>>('/api/admin/enrollments/', { params }),
   update: (id: number, data: { status?: string; attendance_rate?: number }) =>
     api.put<EnrollmentDetail>(`/api/admin/enrollments/${id}`, data),
   generateFeedback: (id: number) =>
@@ -147,6 +156,47 @@ export const adminDashboardApi = {
     api.get<AILog[]>('/api/admin/dashboard/ai-logs', {
       params: { feature_type: featureType, skip, limit }
     }),
+};
+
+// ===== 채팅 =====
+export interface ChatMessage {
+  id: number;
+  session_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  tool_used: string | null;
+  tool_result: Record<string, any> | null;
+  created_at: string;
+}
+
+export interface ChatSession {
+  id: number;
+  session_id: string;
+  student_name: string | null;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatResponse {
+  session_id: string;
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
+}
+
+export const chatApi = {
+  sendMessage: (sessionId: string, message: string, studentName?: string) =>
+    api.post<ChatResponse>('/api/chat/', {
+      session_id: sessionId,
+      message,
+      student_name: studentName
+    }),
+  getSessions: () =>
+    api.get<ChatSession[]>('/api/chat/sessions'),
+  getSessionDetail: (sessionId: string) =>
+    api.get<{ session: ChatSession; messages: ChatMessage[] }>(`/api/chat/sessions/${sessionId}`),
+  deleteSession: (sessionId: string) =>
+    api.delete(`/api/chat/sessions/${sessionId}`),
 };
 
 export default api;

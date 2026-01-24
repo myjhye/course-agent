@@ -20,7 +20,7 @@ from app.routers.chat import router as chat_router
 
 from app.config import settings
 from app.database import engine, Base
-from app.models import Instructor, Lesson, LessonContent, Enrollment, Feedback, AILog, Chat, FAQ  # 모델 import 필수
+from app.models import Instructor, Lesson, LessonContent, Enrollment, Feedback, AILog, ChatSession, ChatMessage, FAQ  # 모델 import 필수
 
 
 @asynccontextmanager

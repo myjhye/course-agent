@@ -14,7 +14,15 @@ from app.database import Base
 from app.config import settings
 # Import all models so Alembic can detect them
 from app.models import (
-    Instructor, Lesson, LessonContent, Enrollment, Feedback, AILog, Chat, FAQ
+    Instructor,
+    Lesson,
+    LessonContent,
+    Enrollment,
+    Feedback,
+    AILog,
+    ChatSession,
+    ChatMessage,
+    FAQ
 )
 
 # this is the Alembic Config object, which provides
