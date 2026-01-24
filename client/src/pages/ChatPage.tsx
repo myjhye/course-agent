@@ -189,10 +189,24 @@ export default function ChatPage() {
                 ) : (
                   <p className="whitespace-pre-line">{msg.content}</p>
                 )}
+                
+                {/* 사용된 도구 표시 (멀티스텝인 경우 여러 개) */}
                 {msg.tool_used && (
-                  <p className="text-xs mt-2 opacity-60">
-                    🔧 {msg.tool_used}
-                  </p>
+                  <div className="mt-2 pt-2 border-t border-gray-100">
+                    <p className="text-xs text-gray-400 flex items-center gap-1">
+                      🔧 {msg.tool_used.split(',').length > 1 ? (
+                        <span className="flex flex-wrap gap-1">
+                          {msg.tool_used.split(',').map((tool, idx) => (
+                            <span key={idx} className="bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">
+                              {tool.trim()}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        msg.tool_used
+                      )}
+                    </p>
+                  </div>
                 )}
               </div>
             </div>

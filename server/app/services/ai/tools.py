@@ -3,7 +3,7 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_lessons",
-            "description": "강습을 검색합니다. 사용자가 강습을 찾거나 추천받고 싶을 때 사용합니다.",
+            "description": "강습을 검색합니다. 사용자가 강습을 찾거나 특정 조건의 강습을 물어볼 때 사용합니다. 검색 후 상세 정보가 필요하면 get_lesson_detail을 추가로 호출하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -13,12 +13,12 @@ CHAT_TOOLS = [
                     },
                     "sport_type": {
                         "type": "string",
-                        "description": "종목 필터 (swimming, tennis, golf, fitness, yoga, pilates)",
+                        "description": "종목 필터",
                         "enum": ["swimming", "tennis", "golf", "fitness", "yoga", "pilates"]
                     },
                     "difficulty": {
                         "type": "string",
-                        "description": "난이도 필터 (beginner, elementary, intermediate, advanced)",
+                        "description": "난이도 필터",
                         "enum": ["beginner", "elementary", "intermediate", "advanced"]
                     }
                 },
@@ -30,13 +30,13 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_lesson_detail",
-            "description": "특정 강습의 상세 정보를 조회합니다.",
+            "description": "특정 강습의 상세 정보(소개, 커리큘럼)를 조회합니다. search_lessons로 찾은 강습의 자세한 내용이 필요할 때 사용합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "lesson_id": {
                         "type": "integer",
-                        "description": "강습 ID"
+                        "description": "강습 ID (search_lessons 결과에서 확인)"
                     }
                 },
                 "required": ["lesson_id"]
@@ -47,7 +47,7 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_enrollments",
-            "description": "수강생의 수강 현황을 조회합니다. 내 강습, 수강 상태, 출석률을 확인할 때 사용합니다.",
+            "description": "수강생의 수강 현황(수강 중인 강습, 완료한 강습, 출석률)을 조회합니다. 추천이 필요하면 이후 get_recommendations를 호출하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,7 +64,7 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_recommendations",
-            "description": "수강생에게 맞춤 강습을 추천합니다.",
+            "description": "수강생의 수강 이력을 바탕으로 다음에 들을 강습을 추천합니다. 수강 현황과 함께 보여주려면 get_my_enrollments를 먼저 호출하세요.",
             "parameters": {
                 "type": "object",
                 "properties": {
