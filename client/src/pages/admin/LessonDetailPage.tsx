@@ -11,6 +11,9 @@ export default function LessonDetailPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [regeneratingIntro, setRegeneratingIntro] = useState(false);
+  const [regeneratingCurriculum, setRegeneratingCurriculum] = useState(false);
+  const [regeneratingThumbnail, setRegeneratingThumbnail] = useState(false);
 
   useEffect(() => {
     loadLesson();
@@ -54,8 +57,8 @@ export default function LessonDetailPage() {
     setPublishing(true);
     try {
       await adminLessonApi.publish(Number(id));
-      await loadLesson();
       alert('강습이 발행되었습니다!');
+      navigate('/admin/lessons');
     } catch (err) {
       console.error(err);
       alert('발행에 실패했습니다.');
@@ -74,6 +77,52 @@ export default function LessonDetailPage() {
     } catch (err) {
       console.error(err);
       alert('삭제에 실패했습니다.');
+    }
+  };
+
+  // 개별 재생성 핸들러
+  const handleRegenerateIntroduction = async () => {
+    if (!id || !content) return;
+    setRegeneratingIntro(true);
+    try {
+      await adminLessonApi.regenerateIntroduction(Number(id), content.id);
+      await loadLesson();
+      alert('소개 문구가 재생성되었습니다.');
+    } catch (err) {
+      console.error(err);
+      alert('소개 문구 재생성에 실패했습니다.');
+    } finally {
+      setRegeneratingIntro(false);
+    }
+  };
+
+  const handleRegenerateCurriculum = async () => {
+    if (!id || !content) return;
+    setRegeneratingCurriculum(true);
+    try {
+      await adminLessonApi.regenerateCurriculum(Number(id), content.id);
+      await loadLesson();
+      alert('커리큘럼이 재생성되었습니다.');
+    } catch (err) {
+      console.error(err);
+      alert('커리큘럼 재생성에 실패했습니다.');
+    } finally {
+      setRegeneratingCurriculum(false);
+    }
+  };
+
+  const handleRegenerateThumbnail = async () => {
+    if (!id || !content) return;
+    setRegeneratingThumbnail(true);
+    try {
+      await adminLessonApi.regenerateThumbnail(Number(id), content.id);
+      await loadLesson();
+      alert('썸네일이 재생성되었습니다.');
+    } catch (err) {
+      console.error(err);
+      alert('썸네일 재생성에 실패했습니다.');
+    } finally {
+      setRegeneratingThumbnail(false);
     }
   };
 
@@ -161,42 +210,73 @@ export default function LessonDetailPage() {
         {content ? (
           <div className="space-y-6">
             {/* 썸네일 */}
-            {content.thumbnail_url && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">썸네일</h3>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-700">썸네일</h3>
+                <button
+                  onClick={handleRegenerateThumbnail}
+                  disabled={regeneratingThumbnail}
+                  className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                >
+                  {regeneratingThumbnail ? '재생성 중...' : '🔄 재생성'}
+                </button>
+              </div>
+              {content.thumbnail_url ? (
                 <img
                   src={`http://localhost:8000${content.thumbnail_url}`}
                   alt="썸네일"
                   className="w-64 h-36 object-cover rounded-lg border"
                 />
-              </div>
-            )}
+              ) : (
+                <div className="w-64 h-36 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
+                  썸네일 없음
+                </div>
+              )}
+            </div>
 
             {/* 소개 문구 */}
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">소개 문구</h3>
-              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-700">소개 문구</h3>
+                <button
+                  onClick={handleRegenerateIntroduction}
+                  disabled={regeneratingIntro}
+                  className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                >
+                  {regeneratingIntro ? '재생성 중...' : '🔄 재생성'}
+                </button>
+              </div>
+              <p className="text-gray-600 bg-gray-50 p-4 rounded-lg whitespace-pre-line">
                 {content.introduction || '(없음)'}
               </p>
             </div>
 
             {/* 커리큘럼 */}
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">커리큘럼</h3>
-              {content.curriculum?.weeks ? (
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-700">커리큘럼</h3>
+                <button
+                  onClick={handleRegenerateCurriculum}
+                  disabled={regeneratingCurriculum}
+                  className="text-xs text-purple-600 hover:text-purple-800 disabled:opacity-50"
+                >
+                  {regeneratingCurriculum ? '재생성 중...' : '🔄 재생성'}
+                </button>
+              </div>
+              {content.curriculum?.weeks && content.curriculum.weeks.length > 0 ? (
                 <div className="space-y-3">
-                  {content.curriculum.weeks.map((week) => (
-                    <div
-                      key={week.week}
-                      className="bg-gray-50 p-4 rounded-lg"
-                    >
-                      <div className="font-medium">
+                  {content.curriculum.weeks.map((week: any) => (
+                    <div key={week.week} className="bg-gray-50 p-4 rounded-lg">
+                      <div className="font-medium text-gray-900">
                         {week.week}주차: {week.title}
                       </div>
-                      {week.topics && (
-                        <ul className="mt-2 text-sm text-gray-600 list-disc list-inside">
-                          {week.topics.map((topic, i) => (
-                            <li key={i}>{topic}</li>
+                      {week.topics && week.topics.length > 0 && (
+                        <ul className="mt-2 text-sm text-gray-600 space-y-1">
+                          {week.topics.map((topic: string, i: number) => (
+                            <li key={i} className="flex items-start gap-2">
+                              <span className="text-blue-500">•</span>
+                              {topic}
+                            </li>
                           ))}
                         </ul>
                       )}
@@ -204,13 +284,12 @@ export default function LessonDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-gray-500">(없음)</p>
+                <p className="text-gray-500 bg-gray-50 p-4 rounded-lg">(커리큘럼 없음)</p>
               )}
             </div>
 
-            <div className="text-xs text-gray-400">
-              버전 {content.version} ・ 생성일:{' '}
-              {new Date(content.created_at).toLocaleString()}
+            <div className="text-xs text-gray-400 pt-4 border-t">
+              버전 {content.version} ・ 생성일: {new Date(content.created_at).toLocaleString('ko-KR')}
             </div>
           </div>
         ) : (

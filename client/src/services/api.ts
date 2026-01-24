@@ -59,6 +59,14 @@ export const adminLessonApi = {
   activateContent: (lessonId: number, contentId: number) =>
     api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/activate`),
   
+  // 개별 재생성 API
+  regenerateIntroduction: (lessonId: number, contentId: number) =>
+    api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-introduction`),
+  regenerateCurriculum: (lessonId: number, contentId: number) =>
+    api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-curriculum`),
+  regenerateThumbnail: (lessonId: number, contentId: number) =>
+    api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-thumbnail`),
+  
   // 발행
   publish: (id: number) => api.post<Lesson>(`/api/admin/lessons/${id}/publish`),
 };

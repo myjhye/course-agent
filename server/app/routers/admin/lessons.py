@@ -1,14 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.database import get_db
+from app.models.lesson import Lesson
 from app.schemas.lesson import (
     LessonCreate, LessonUpdate, LessonResponse, LessonDetailResponse,
     LessonContentResponse, UpdateContentRequest
 )
 from app.schemas.common import PaginatedResponse
 from app.services.lesson_service import LessonService
-from app.services.ai.content_generator import generate_lesson_content
+from app.services.ai.content_generator import ContentGenerator
 
 router = APIRouter(prefix="/api/admin/lessons", tags=["admin-lessons"])
 
@@ -89,12 +92,29 @@ async def delete_lesson(lesson_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/{lesson_id}/generate-content", response_model=LessonContentResponse)
 async def generate_content(lesson_id: int, db: AsyncSession = Depends(get_db)):
     """AI 콘텐츠 생성"""
-    lesson = await LessonService.get_lesson_by_id(db, lesson_id)
+    # instructor를 미리 로드
+    result = await db.execute(
+        select(Lesson)
+        .options(selectinload(Lesson.instructor))
+        .where(Lesson.id == lesson_id)
+    )
+    lesson = result.scalar_one_or_none()
+    
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     
-    content = await generate_lesson_content(db, lesson)
-    return content
+    content = await ContentGenerator.generate_full_content(db, lesson)
+    
+    return {
+        "id": content.id,
+        "lesson_id": content.lesson_id,
+        "introduction": content.introduction,
+        "curriculum": content.curriculum,
+        "thumbnail_url": content.thumbnail_url,
+        "version": content.version,
+        "is_active": content.is_active,
+        "created_at": content.created_at.isoformat()
+    }
 
 
 @router.get("/{lesson_id}/contents", response_model=List[LessonContentResponse])
@@ -128,6 +148,51 @@ async def activate_content(
     if not success:
         raise HTTPException(status_code=404, detail="Content not found")
     return {"message": "Content activated"}
+
+
+@router.post("/{lesson_id}/contents/{content_id}/regenerate-introduction")
+async def regenerate_introduction(
+    lesson_id: int,
+    content_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """소개 문구 재생성"""
+    lesson = await LessonService.get_lesson_by_id(db, lesson_id)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    content = await ContentGenerator.regenerate_introduction(db, lesson, content_id)
+    return {"message": "소개 문구가 재생성되었습니다.", "introduction": content.introduction}
+
+
+@router.post("/{lesson_id}/contents/{content_id}/regenerate-curriculum")
+async def regenerate_curriculum(
+    lesson_id: int,
+    content_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """커리큘럼 재생성"""
+    lesson = await LessonService.get_lesson_by_id(db, lesson_id)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    content = await ContentGenerator.regenerate_curriculum(db, lesson, content_id)
+    return {"message": "커리큘럼이 재생성되었습니다.", "curriculum": content.curriculum}
+
+
+@router.post("/{lesson_id}/contents/{content_id}/regenerate-thumbnail")
+async def regenerate_thumbnail(
+    lesson_id: int,
+    content_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """썸네일 재생성"""
+    lesson = await LessonService.get_lesson_by_id(db, lesson_id)
+    if not lesson:
+        raise HTTPException(status_code=404, detail="Lesson not found")
+    
+    content = await ContentGenerator.regenerate_thumbnail(db, lesson, content_id)
+    return {"message": "썸네일이 재생성되었습니다.", "thumbnail_url": content.thumbnail_url}
 
 
 @router.post("/{lesson_id}/publish", response_model=LessonResponse)

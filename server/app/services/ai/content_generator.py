@@ -1,232 +1,322 @@
-from app.services.ai.llm_client import generate_text, generate_image
-
-# ✅ 1. 비즈니스 룰: 우리 서비스에서 허용하는 카테고리 목록 정의
-VALID_CATEGORIES = [
-    "프로그래밍",
-    "데이터 사이언스",
-    "디자인",
-    "마케팅",
-    "비즈니스",
-    "외국어",
-    "자기계발",
-    "기타"
-]
+import json
+import uuid
+import time
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from app.models.lesson import Lesson
+from app.models.lesson_content import LessonContent
+from app.models.ai_log import AILog
+from app.services.ai.llm_client import get_openai_client, generate_image
 
 
-async def generate_course_draft(topic: str) -> dict:
-    """Topic 기반으로 강의 초안 생성 (정형화된 카테고리 적용)"""
+class ContentGenerator:
     
-    # ✅ 2. 프롬프트에 '허용된 목록'을 주입 (Grounding)
-    categories_str = ", ".join(VALID_CATEGORIES)
+    @staticmethod
+    async def generate_full_content(db: AsyncSession, lesson: Lesson) -> LessonContent:
+        """전체 콘텐츠 생성 (소개 + 커리큘럼 + 썸네일)"""
+        
+        start_time = time.time()
+        
+        # 1. 소개 문구 생성
+        introduction = await ContentGenerator._generate_introduction(lesson)
+        
+        # 2. 커리큘럼 생성
+        curriculum = await ContentGenerator._generate_curriculum(lesson)
+        
+        # 3. 썸네일 생성
+        thumbnail_url = await ContentGenerator._generate_thumbnail(lesson)
+        
+        # 4. 버전 계산
+        result = await db.execute(
+            select(LessonContent)
+            .where(LessonContent.lesson_id == lesson.id)
+            .order_by(LessonContent.version.desc())
+        )
+        existing = result.scalars().first()
+        new_version = (existing.version + 1) if existing else 1
+        
+        # 5. 기존 콘텐츠 비활성화
+        if existing:
+            all_contents = await db.execute(
+                select(LessonContent).where(LessonContent.lesson_id == lesson.id)
+            )
+            for content in all_contents.scalars().all():
+                content.is_active = False
+        
+        # 6. 새 콘텐츠 저장
+        content = LessonContent(
+            lesson_id=lesson.id,
+            introduction=introduction,
+            curriculum=curriculum,
+            thumbnail_url=thumbnail_url,
+            version=new_version,
+            is_active=True
+        )
+        db.add(content)
+        
+        # 7. AI 로그
+        latency_ms = (time.time() - start_time) * 1000
+        ai_log = AILog(
+            feature_type="content",
+            lesson_id=lesson.id,
+            input_data={"title": lesson.title, "action": "full"},
+            output_data={"version": new_version},
+            latency_ms=latency_ms
+        )
+        db.add(ai_log)
+        
+        await db.commit()
+        await db.refresh(content)
+        
+        return content
     
-    title_category_prompt = f"""
-다음 주제를 바탕으로 강의 제목과 카테고리를 생성해주세요.
+    @staticmethod
+    async def regenerate_introduction(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
+        """소개 문구만 재생성"""
+        
+        result = await db.execute(
+            select(LessonContent).where(LessonContent.id == content_id)
+        )
+        content = result.scalar_one_or_none()
+        
+        if not content:
+            raise ValueError("Content not found")
+        
+        introduction = await ContentGenerator._generate_introduction(lesson)
+        content.introduction = introduction
+        
+        # AI 로그
+        ai_log = AILog(
+            feature_type="content",
+            lesson_id=lesson.id,
+            input_data={"title": lesson.title, "action": "regenerate_introduction"},
+            output_data={"introduction_length": len(introduction)}
+        )
+        db.add(ai_log)
+        
+        await db.commit()
+        await db.refresh(content)
+        
+        return content
+    
+    @staticmethod
+    async def regenerate_curriculum(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
+        """커리큘럼만 재생성"""
+        
+        result = await db.execute(
+            select(LessonContent).where(LessonContent.id == content_id)
+        )
+        content = result.scalar_one_or_none()
+        
+        if not content:
+            raise ValueError("Content not found")
+        
+        curriculum = await ContentGenerator._generate_curriculum(lesson)
+        content.curriculum = curriculum
+        
+        # AI 로그
+        ai_log = AILog(
+            feature_type="content",
+            lesson_id=lesson.id,
+            input_data={"title": lesson.title, "action": "regenerate_curriculum"},
+            output_data={"weeks_count": len(curriculum.get("weeks", []))}
+        )
+        db.add(ai_log)
+        
+        await db.commit()
+        await db.refresh(content)
+        
+        return content
+    
+    @staticmethod
+    async def regenerate_thumbnail(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
+        """썸네일만 재생성"""
+        
+        result = await db.execute(
+            select(LessonContent).where(LessonContent.id == content_id)
+        )
+        content = result.scalar_one_or_none()
+        
+        if not content:
+            raise ValueError("Content not found")
+        
+        thumbnail_url = await ContentGenerator._generate_thumbnail(lesson)
+        content.thumbnail_url = thumbnail_url
+        
+        # AI 로그
+        ai_log = AILog(
+            feature_type="content",
+            lesson_id=lesson.id,
+            input_data={"title": lesson.title, "action": "regenerate_thumbnail"},
+            output_data={"thumbnail_url": thumbnail_url}
+        )
+        db.add(ai_log)
+        
+        await db.commit()
+        await db.refresh(content)
+        
+        return content
+    
+    @staticmethod
+    async def _generate_introduction(lesson: Lesson) -> str:
+        """소개 문구 생성"""
+        
+        client = get_openai_client()
+        
+        target_labels = {
+            "adult": "성인",
+            "child": "어린이",
+            "senior": "시니어",
+            "all": "전체"
+        }
+        difficulty_labels = {
+            "beginner": "입문",
+            "elementary": "초급",
+            "intermediate": "중급",
+            "advanced": "고급"
+        }
+        sport_labels = {
+            "swimming": "수영",
+            "tennis": "테니스",
+            "golf": "골프",
+            "fitness": "피트니스",
+            "yoga": "요가",
+            "pilates": "필라테스"
+        }
+        
+        target = target_labels.get(lesson.target_audience.value, lesson.target_audience.value)
+        difficulty = difficulty_labels.get(lesson.difficulty.value, lesson.difficulty.value)
+        sport = sport_labels.get(lesson.sport_type.value, lesson.sport_type.value)
+        
+        prompt = f"""다음 강습의 소개 문구를 작성해주세요.
 
-주제: {topic}
+강습명: {lesson.title}
+종목: {sport}
+대상: {target}
+난이도: {difficulty}
+강사: {lesson.instructor.name if lesson.instructor else "미정"}
 
-[제약 사항]
-1. 제목: 20자 이내로 매력적이고 명확하게 작성.
-2. 카테고리: 반드시 다음 목록 중 가장 적절한 하나를 선택할 것. 목록에 없으면 '기타'를 선택.
-   - 목록: [{categories_str}]
+요청사항:
+- 3~4문장으로 작성
+- 대상({target})에 맞는 톤 사용
+- 이 강습을 통해 얻을 수 있는 것 강조
+- 친근하고 격려하는 톤
+- 마크다운이나 특수문자 없이 순수 텍스트로만"""
 
-[응답 형식]
-제목: [생성된 제목]
-카테고리: [선택한 카테고리]
-"""
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 스포츠 강습 플랫폼의 카피라이터입니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=300,
+                temperature=0.7
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"소개 문구 생성 실패: {e}")
+            return f"{lesson.title}에 오신 것을 환영합니다!"
     
-    # LLM 호출
-    response_text = await generate_text(title_category_prompt)
-    
-    # --- 파싱 및 검증 로직 ---
-    title = ""
-    category = "기타"  # 기본값
-    
-    for line in response_text.split('\n'):
-        line = line.strip()
-        if line.startswith('제목:'):
-            title = line.split(':', 1)[1].strip()
-        elif line.startswith('카테고리:'):
-            raw_category = line.split(':', 1)[1].strip()
+    @staticmethod
+    async def _generate_curriculum(lesson: Lesson) -> dict:
+        """커리큘럼 생성 (4~8주차)"""
+        
+        client = get_openai_client()
+        
+        # 난이도별 주차 수
+        weeks_by_difficulty = {
+            "beginner": 4,
+            "elementary": 6,
+            "intermediate": 8,
+            "advanced": 8
+        }
+        num_weeks = weeks_by_difficulty.get(lesson.difficulty.value, 4)
+        
+        target_labels = {
+            "adult": "성인",
+            "child": "어린이",
+            "senior": "시니어",
+            "all": "전체"
+        }
+        sport_labels = {
+            "swimming": "수영",
+            "tennis": "테니스",
+            "golf": "골프",
+            "fitness": "피트니스",
+            "yoga": "요가",
+            "pilates": "필라테스"
+        }
+        
+        target = target_labels.get(lesson.target_audience.value, lesson.target_audience.value)
+        sport = sport_labels.get(lesson.sport_type.value, lesson.sport_type.value)
+        
+        prompt = f"""다음 강습의 {num_weeks}주차 커리큘럼을 작성해주세요.
+
+강습명: {lesson.title}
+종목: {sport}
+대상: {target}
+난이도: {lesson.difficulty.value}
+
+요청사항:
+- 총 {num_weeks}주차 커리큘럼
+- 각 주차별로 제목(title)과 세부 주제(topics) 3~4개 작성
+- 점진적으로 난이도가 올라가도록 구성
+- 마지막 주차는 종합/실전 내용으로
+- 대상({target})에 맞는 내용과 용어 사용
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{{
+  "weeks": [
+    {{
+      "week": 1,
+      "title": "주차 제목",
+      "topics": ["주제1", "주제2", "주제3"]
+    }},
+    {{
+      "week": 2,
+      "title": "주차 제목",
+      "topics": ["주제1", "주제2", "주제3"]
+    }}
+  ]
+}}"""
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 스포츠 강습 커리큘럼 전문가입니다. JSON 형식으로만 응답합니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1500,
+                temperature=0.7
+            )
             
-            # ✅ 3. 안전 장치: LLM이 뱉은 말이 유효한 카테고리인지 확인
-            # (공백 제거 및 정확한 매칭 확인)
-            if raw_category in VALID_CATEGORIES:
-                category = raw_category
-            else:
-                # LLM이 엉뚱한 말을 했다면 '기타'로 강제 매핑하거나, 
-                # 가장 유사한 걸 찾는 로직을 추가할 수도 있음.
-                category = "기타"
-
-    if not title:
-        title = f"{topic} 강의"
-
-    # 2. 설명 생성
-    description_prompt = f"""
-다음 강의의 매력적인 설명을 작성해주세요.
-
-강의 제목: {title}
-카테고리: {category}
-주제: {topic}
-
-요구사항:
-- 3~4문장으로 작성
-- 수강 대상과 기대 효과 포함
-- 전문적이면서도 친근한 톤
-"""
-    description = await generate_text(description_prompt)
+            result_text = response.choices[0].message.content
+            
+            # JSON 파싱
+            start = result_text.find('{')
+            end = result_text.rfind('}') + 1
+            if start >= 0 and end > start:
+                return json.loads(result_text[start:end])
+            
+        except Exception as e:
+            print(f"커리큘럼 생성 실패: {e}")
+        
+        # 실패 시 기본 커리큘럼
+        return {
+            "weeks": [
+                {"week": i, "title": f"{i}주차", "topics": ["기초 동작", "연습", "복습"]}
+                for i in range(1, num_weeks + 1)
+            ]
+        }
     
-    # 3. 커리큘럼 생성
-    curriculum_prompt = f"""
-다음 강의의 커리큘럼을 작성해주세요.
-
-강의 제목: {title}
-카테고리: {category}
-주제: {topic}
-
-요구사항:
-- 5~8개 섹션으로 구성
-- 각 섹션에 2~3개 소주제
-- 번호 매기기 형식 (1. 2. 3.)
-"""
-    curriculum = await generate_text(curriculum_prompt)
-
-    # 4. 썸네일 생성 (카테고리가 정확해져서 이미지 퀄리티도 올라감)
-    thumbnail_url = None
-    try:
-        thumbnail_prompt = f"""
-Create a professional educational course thumbnail image.
-Course title: "{title}"
-Category: {category}
-Topic: {topic}
-Requirements: High quality, 16:9 aspect ratio, No text.
-"""
-        thumbnail_url = generate_image(thumbnail_prompt)
-    except Exception as e:
-        print(f"썸네일 오류: {e}")
-        thumbnail_url = None
-
-    return {
-        "title": title,
-        "category": category,  # 이제 항상 정해진 값 중 하나가 나옴
-        "description": description,
-        "curriculum": curriculum,
-        "thumbnail_url": thumbnail_url
-    }
-
-
-async def generate_course_content(title: str, category: str) -> dict:
-    """강의 콘텐츠 전체 생성 (설명, 커리큘럼, 썸네일)"""
-    
-    # 카테고리 검증 (기존 강의 업데이트 시에도 적용)
-    if category not in VALID_CATEGORIES:
-        category = "기타"
-    
-    # 1. 설명 생성
-    description_prompt = f"""
-다음 강의의 매력적인 설명을 작성해주세요.
-
-강의 제목: {title}
-카테고리: {category}
-
-요구사항:
-- 3~4문장으로 작성
-- 수강 대상과 기대 효과 포함
-- 전문적이면서도 친근한 톤
-"""
-    description = await generate_text(description_prompt)
-    
-    # 2. 커리큘럼 생성
-    curriculum_prompt = f"""
-다음 강의의 커리큘럼을 작성해주세요.
-
-강의 제목: {title}
-카테고리: {category}
-
-요구사항:
-- 5~8개 섹션으로 구성
-- 각 섹션에 2~3개 소주제
-- 번호 매기기 형식 (1. 2. 3.)
-"""
-    curriculum = await generate_text(curriculum_prompt)
-    
-    # 3. 썸네일 이미지 생성
-    thumbnail_url = None
-    try:
-        thumbnail_prompt = f"""
-Create a professional educational course thumbnail image.
-Course title: "{title}"
-Category: {category}
-
-Requirements:
-- Modern, clean design
-- Vibrant colors
-- Professional e-learning style
-- Include relevant icons or imagery for {category}
-- No text in image
-- 16:9 aspect ratio
-"""
-        thumbnail_url = generate_image(thumbnail_prompt)
-    except Exception as e:
-        print(f"썸네일 생성 실패: {e}")
-        thumbnail_url = None
-    
-    return {
-        "description": description,
-        "curriculum": curriculum,
-        "thumbnail_url": thumbnail_url
-    }
-
-
-async def generate_lesson_content(db, lesson) -> dict:
-    """강습 콘텐츠 생성 (Lesson 모델 기반)"""
-    from app.models.lesson_content import LessonContent
-    
-    # 1. 소개 문구 생성
-    introduction_prompt = f"""
-다음 강습의 매력적인 소개 문구를 작성해주세요.
-
-강습 제목: {lesson.title}
-종목: {lesson.sport_type.value}
-대상: {lesson.target_audience.value}
-난이도: {lesson.difficulty.value}
-
-요구사항:
-- 3~4문장으로 작성
-- 수강 대상과 기대 효과 포함
-- 전문적이면서도 친근한 톤
-"""
-    introduction = await generate_text(introduction_prompt)
-    
-    # 2. 커리큘럼 생성 (JSON 형식)
-    curriculum_prompt = f"""
-다음 강습의 커리큘럼을 JSON 형식으로 작성해주세요.
-
-강습 제목: {lesson.title}
-종목: {lesson.sport_type.value}
-대상: {lesson.target_audience.value}
-난이도: {lesson.difficulty.value}
-
-요구사항:
-- 주차별로 구성 (4~8주)
-- 각 주차에 제목과 주요 내용 포함
-- JSON 형식: {{"weeks": [{{"week": 1, "title": "...", "topics": ["...", "..."]}}, ...]}}
-
-JSON만 반환하세요.
-"""
-    curriculum_text = await generate_text(curriculum_prompt)
-    
-    # JSON 파싱 시도
-    import json
-    try:
-        curriculum = json.loads(curriculum_text)
-    except:
-        # 파싱 실패 시 기본 구조
-        curriculum = {"weeks": [{"week": 1, "title": "기본기", "topics": ["기초 동작"]}]}
-    
-    # 3. 썸네일 생성
-    thumbnail_url = None
-    try:
-        thumbnail_prompt = f"""
+    @staticmethod
+    async def _generate_thumbnail(lesson: Lesson) -> str:
+        """썸네일 생성"""
+        try:
+            thumbnail_prompt = f"""
 Create a professional sports lesson thumbnail image.
 Lesson title: "{lesson.title}"
 Sport type: {lesson.sport_type.value}
@@ -234,37 +324,13 @@ Target: {lesson.target_audience.value}
 Difficulty: {lesson.difficulty.value}
 Requirements: High quality, 16:9 aspect ratio, No text.
 """
-        thumbnail_url = generate_image(thumbnail_prompt)
-    except Exception as e:
-        print(f"썸네일 오류: {e}")
-        thumbnail_url = None
-    
-    # LessonContent 생성
-    # 기존 활성 콘텐츠 비활성화
-    from sqlalchemy import select, and_, update
-    await db.execute(
-        update(LessonContent)
-        .where(and_(LessonContent.lesson_id == lesson.id, LessonContent.is_active == True))
-        .values(is_active=False)
-    )
-    
-    # 새 버전 번호 계산
-    max_version_result = await db.execute(
-        select(LessonContent).where(LessonContent.lesson_id == lesson.id)
-    )
-    max_version = max([c.version for c in max_version_result.scalars().all()], default=0)
-    
-    # 새 콘텐츠 생성
-    new_content = LessonContent(
-        lesson_id=lesson.id,
-        introduction=introduction,
-        curriculum=curriculum,
-        thumbnail_url=thumbnail_url,
-        version=max_version + 1,
-        is_active=True
-    )
-    db.add(new_content)
-    await db.commit()
-    await db.refresh(new_content)
-    
-    return new_content
+            return generate_image(thumbnail_prompt)
+        except Exception as e:
+            print(f"썸네일 생성 실패: {e}")
+            return None
+
+
+# 기존 함수들 호환성 유지
+async def generate_lesson_content(db, lesson) -> LessonContent:
+    """강습 콘텐츠 생성 (기존 호환성)"""
+    return await ContentGenerator.generate_full_content(db, lesson)
