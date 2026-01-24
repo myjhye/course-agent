@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { myEnrollmentApi, myRecommendationApi } from '../../services/api';
 import type { CategorizedRecommendations } from '../../services/api';
+import Pagination from '../../components/common/Pagination';
 import {
   SPORT_LABELS,
   DIFFICULTY_LABELS,
@@ -15,6 +16,8 @@ export default function MyEnrollmentsPage() {
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [recommendations, setRecommendations] = useState<CategorizedRecommendations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     loadData();
@@ -28,6 +31,11 @@ export default function MyEnrollmentsPage() {
       ]);
       setEnrollments(enrollRes.data);
       setRecommendations(recRes.data);
+
+      // 페이지네이션 설정 (5개씩)
+      const totalItems = enrollRes.data.length;
+      const itemsPerPage = 5;
+      setTotalPages(Math.ceil(totalItems / itemsPerPage));
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,11 +74,25 @@ export default function MyEnrollmentsPage() {
               </Link>
             </div>
           ) : (
-            <div className="space-y-3">
-              {enrollments.map((enrollment) => (
-                <EnrollmentCard key={enrollment.id} enrollment={enrollment} />
-              ))}
-            </div>
+            <>
+              <div className="space-y-3">
+                {enrollments
+                  .slice((page - 1) * 5, page * 5)
+                  .map((enrollment) => (
+                    <EnrollmentCard key={enrollment.id} enrollment={enrollment} />
+                  ))}
+              </div>
+
+              {totalPages > 1 && (
+                <div className="mt-6">
+                  <Pagination
+                    page={page}
+                    totalPages={totalPages}
+                    onPageChange={setPage}
+                  />
+                </div>
+              )}
+            </>
           )}
         </section>
 
