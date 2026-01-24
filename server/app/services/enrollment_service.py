@@ -21,7 +21,7 @@ class EnrollmentService:
             )
         )
         if existing.scalar_one_or_none():
-            raise ValueError(f"Already enrolled in lesson {data.lesson_id}")
+            raise ValueError("DUPLICATE_ENROLLMENT")
         
         enrollment = Enrollment(
             student_name=data.student_name,

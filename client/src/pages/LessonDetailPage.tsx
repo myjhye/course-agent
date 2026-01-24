@@ -100,7 +100,14 @@ export default function LessonDetailPage() {
       setStudentName('');
     } catch (err: any) {
       console.error(err);
-      alert(err.response?.data?.detail || '수강 신청에 실패했습니다.');
+      const errorDetail = err.response?.data?.detail || '';
+      
+      // 중복 수강 에러 처리
+      if (errorDetail.includes('DUPLICATE_ENROLLMENT')) {
+        alert(`😊 ${studentName.trim()}님은 이미 이 강습을 수강 중이에요!\n\n내 수강 현황에서 확인해보세요.`);
+      } else {
+        alert(errorDetail || '수강 신청에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      }
     } finally {
       setEnrolling(false);
     }
