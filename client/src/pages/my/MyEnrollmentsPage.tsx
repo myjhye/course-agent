@@ -120,13 +120,18 @@ function EnrollmentCard({ enrollment }: { enrollment: any }) {
     cancelled: 'bg-red-100 text-red-700',
   };
 
+  // API 응답 구조에 맞게 수정
+  const title = enrollment.lesson?.title || enrollment.lesson_title || '알 수 없는 강습';
+  const sportType = enrollment.lesson?.sport_type || enrollment.lesson_sport_type;
+  const difficulty = enrollment.lesson?.difficulty || enrollment.lesson_difficulty;
+
   return (
     <div className="bg-white rounded-xl p-4 flex items-center justify-between">
       <div>
-        <h3 className="font-medium">{enrollment.lesson?.title || '알 수 없는 강습'}</h3>
+        <h3 className="font-medium">{title}</h3>
         <p className="text-sm text-gray-500">
-          {SPORT_LABELS[enrollment.lesson?.sport_type] || enrollment.lesson?.sport_type} ・{' '}
-          {DIFFICULTY_LABELS[enrollment.lesson?.difficulty] || enrollment.lesson?.difficulty}
+          {SPORT_LABELS[sportType] || sportType} ・{' '}
+          {DIFFICULTY_LABELS[difficulty] || difficulty}
         </p>
       </div>
       <div className="text-right">

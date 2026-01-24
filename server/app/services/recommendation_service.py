@@ -137,7 +137,7 @@ class RecommendationService:
                 return {
                     "lesson": RecommendationService._lesson_to_dict(next_lesson),
                     "reason_type": "next_level",
-                    "base_lesson": lesson
+                    "base_lesson_title": lesson.title
                 }
 
         return None
@@ -276,7 +276,8 @@ class RecommendationService:
 
         context = ""
         if reason_type == "next_level" and base_lesson:
-            context = f"'{base_lesson.title}'을 잘 수강하고 있어서 다음 단계인 '{lesson['title']}'을 추천"
+            title = base_lesson.get("title") if isinstance(base_lesson, dict) else getattr(base_lesson, 'title', '이전 강습')
+            context = f"'{title}'을 잘 수강하고 있어서 다음 단계인 '{lesson['title']}'을 추천"
         elif reason_type == "new_sport":
             done = [e.lesson.sport_type.value for e in enrollments if e.lesson]
             context = f"기존에 {', '.join(done)} 경험이 있고, 새로운 종목 '{lesson['title']}'을 추천"
@@ -310,7 +311,8 @@ class RecommendationService:
     @staticmethod
     def _get_default_reason(reason_type: str, base_lesson=None) -> str:
         if reason_type == "next_level" and base_lesson:
-            return f"{base_lesson.title}에서 배운 기초로 한 단계 더 성장해보세요!"
+            title = base_lesson.get("title") if isinstance(base_lesson, dict) else getattr(base_lesson, 'title', '이전 강습')
+            return f"{title}에서 배운 기초로 한 단계 더 성장해보세요!"
         elif reason_type == "new_sport":
             return "새로운 종목에 도전하며 다양한 운동의 즐거움을 경험해보세요!"
         elif reason_type == "interest_based":
@@ -321,7 +323,7 @@ class RecommendationService:
     def _get_next_difficulty(current: str) -> Optional[str]:
         try:
             idx = DIFFICULTY_ORDER.index(current)
-            if idx < len(DIFFULTY_ORDER) - 1:
+            if idx < len(DIFFICULTY_ORDER) - 1:
                 return DIFFICULTY_ORDER[idx + 1]
         except ValueError:
             pass

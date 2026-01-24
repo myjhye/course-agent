@@ -6,6 +6,7 @@ import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const STUDENT_NAME = '홍길동'; // 하드코딩
 
 const SPORT_OPTIONS: { value: SportType | ''; label: string }[] = [
   { value: '', label: '전체' },
@@ -33,6 +34,7 @@ const DIFFICULTY_OPTIONS: { value: Difficulty | ''; label: string }[] = [
 
 export default function MyLessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [likedLessons, setLikedLessons] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -73,6 +75,22 @@ export default function MyLessonsPage() {
       const res = await lessonApi.getPublished(params);
       setLessons(res.data.items);
       setTotalPages(res.data.total_pages);
+
+      // 각 강습의 찜 상태 확인
+      const likedSet = new Set<number>();
+      await Promise.all(
+        res.data.items.map(async (lesson: Lesson) => {
+          try {
+            const likeRes = await lessonApi.getLikeStatus(lesson.id, STUDENT_NAME);
+            if (likeRes.data.liked) {
+              likedSet.add(lesson.id);
+            }
+          } catch {
+            // 무시
+          }
+        })
+      );
+      setLikedLessons(likedSet);
     } catch (err) {
       console.error(err);
     } finally {
@@ -91,6 +109,26 @@ export default function MyLessonsPage() {
       return newFilters;
     });
     setPage(1); // 필터 변경 시 첫 페이지로
+  };
+
+  const handleToggleLike = async (lessonId: number, e: React.MouseEvent) => {
+    e.preventDefault(); // Link 클릭 방지
+    e.stopPropagation();
+
+    try {
+      const res = await lessonApi.toggleLike(lessonId, STUDENT_NAME);
+      setLikedLessons(prev => {
+        const newSet = new Set(prev);
+        if (res.data.liked) {
+          newSet.add(lessonId);
+        } else {
+          newSet.delete(lessonId);
+        }
+        return newSet;
+      });
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   if (loading) {
@@ -191,7 +229,12 @@ export default function MyLessonsPage() {
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {lessons.map((lesson) => (
-                <LessonCard key={lesson.id} lesson={lesson} />
+                <LessonCard
+                  key={lesson.id}
+                  lesson={lesson}
+                  liked={likedLessons.has(lesson.id)}
+                  onToggleLike={handleToggleLike}
+                />
               ))}
             </div>
 
@@ -207,7 +250,15 @@ export default function MyLessonsPage() {
   );
 }
 
-function LessonCard({ lesson }: { lesson: Lesson & { active_content?: { thumbnail_url?: string | null } } }) {
+function LessonCard({
+  lesson,
+  liked,
+  onToggleLike
+}: {
+  lesson: Lesson & { active_content?: { thumbnail_url?: string | null } };
+  liked: boolean;
+  onToggleLike: (lessonId: number, e: React.MouseEvent) => void;
+}) {
   const thumbnailUrl = lesson.active_content?.thumbnail_url
     ? `${API_BASE}${lesson.active_content.thumbnail_url}`
     : null;
@@ -215,8 +266,20 @@ function LessonCard({ lesson }: { lesson: Lesson & { active_content?: { thumbnai
   return (
     <Link
       to={`/lessons/${lesson.id}`}
-      className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow"
+      className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow relative group"
     >
+      {/* 찜 버튼 */}
+      <button
+        onClick={(e) => onToggleLike(lesson.id, e)}
+        className="absolute bottom-4 right-4 z-10 w-12 h-12 flex items-center justify-center rounded-full bg-white/90 hover:bg-white shadow-md transition-all duration-200"
+      >
+        {liked ? (
+          <span className="text-red-500 text-xl">❤️</span>
+        ) : (
+          <span className="text-gray-400 text-xl group-hover:text-gray-600">🤍</span>
+        )}
+      </button>
+
       {/* 썸네일 */}
       <div className="aspect-video bg-gradient-to-br from-blue-100 to-blue-200 relative">
         {thumbnailUrl ? (
