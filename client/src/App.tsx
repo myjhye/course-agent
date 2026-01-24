@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import ScrollToTop from './components/ScrollToTop';
 import Layout from './components/layout/Layout';
 import HomePage from './pages/HomePage';
 import LessonsPage from './pages/LessonsPage';
@@ -16,6 +17,7 @@ import AdminEnrollmentsPage from './pages/admin/EnrollmentsPage';
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         {/* 일반 사용자 */}
         <Route element={<Layout />}>
