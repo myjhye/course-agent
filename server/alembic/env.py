@@ -22,7 +22,9 @@ from app.models import (
     AILog,
     ChatSession,
     ChatMessage,
-    FAQ
+    FAQ,
+    LessonView,
+    LessonLike
 )
 
 # this is the Alembic Config object, which provides

@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
 from typing import List, Optional
 from app.database import get_db
 from app.schemas.lesson import LessonResponse, LessonDetailResponse
 from app.schemas.common import PaginatedResponse
 from app.services.lesson_service import LessonService
+from app.models.lesson_interest import LessonView, LessonLike
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 
@@ -56,4 +58,61 @@ async def get_lesson_detail(lesson_id: int, db: AsyncSession = Depends(get_db)):
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
     return lesson
+
+
+@router.post("/{lesson_id}/view")
+async def record_view(
+    lesson_id: int,
+    student_name: str = Query(..., description="수강생 이름"),
+    db: AsyncSession = Depends(get_db)
+):
+    """강습 조회 기록"""
+    view = LessonView(student_name=student_name, lesson_id=lesson_id)
+    db.add(view)
+    await db.commit()
+    return {"message": "View recorded"}
+
+
+@router.post("/{lesson_id}/like")
+async def toggle_like(
+    lesson_id: int,
+    student_name: str = Query(..., description="수강생 이름"),
+    db: AsyncSession = Depends(get_db)
+):
+    """강습 찜 토글"""
+    # 기존 찜 확인
+    result = await db.execute(
+        select(LessonLike).where(
+            LessonLike.student_name == student_name,
+            LessonLike.lesson_id == lesson_id
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        await db.delete(existing)
+        await db.commit()
+        return {"liked": False, "message": "찜 해제"}
+    else:
+        like = LessonLike(student_name=student_name, lesson_id=lesson_id)
+        db.add(like)
+        await db.commit()
+        return {"liked": True, "message": "찜 완료"}
+
+
+@router.get("/{lesson_id}/like-status")
+async def get_like_status(
+    lesson_id: int,
+    student_name: str = Query(..., description="수강생 이름"),
+    db: AsyncSession = Depends(get_db)
+):
+    """찜 상태 확인"""
+    result = await db.execute(
+        select(LessonLike).where(
+            LessonLike.student_name == student_name,
+            LessonLike.lesson_id == lesson_id
+        )
+    )
+    existing = result.scalar_one_or_none()
+    return {"liked": existing is not None}
 

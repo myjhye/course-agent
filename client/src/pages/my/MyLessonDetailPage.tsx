@@ -5,6 +5,7 @@ import type { LessonDetail } from '../../types';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const STUDENT_NAME = '홍길동'; // 하드코딩
 
 export default function MyLessonDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,9 +14,14 @@ export default function MyLessonDetailPage() {
   const [enrolling, setEnrolling] = useState(false);
   const [studentName, setStudentName] = useState('');
   const [showEnrollForm, setShowEnrollForm] = useState(false);
+  const [liked, setLiked] = useState(false);
 
   useEffect(() => {
-    loadLesson();
+    if (id) {
+      loadLesson();
+      recordView();
+      checkLikeStatus();
+    }
   }, [id]);
 
   const loadLesson = async () => {
@@ -27,6 +33,32 @@ export default function MyLessonDetailPage() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const recordView = async () => {
+    try {
+      await lessonApi.recordView(Number(id), STUDENT_NAME);
+    } catch (err) {
+      // 무시
+    }
+  };
+
+  const checkLikeStatus = async () => {
+    try {
+      const res = await lessonApi.getLikeStatus(Number(id), STUDENT_NAME);
+      setLiked(res.data.liked);
+    } catch (err) {
+      // 무시
+    }
+  };
+
+  const handleToggleLike = async () => {
+    try {
+      const res = await lessonApi.toggleLike(Number(id), STUDENT_NAME);
+      setLiked(res.data.liked);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -117,9 +149,17 @@ export default function MyLessonDetailPage() {
             </span>
           </div>
 
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {lesson.title}
-          </h1>
+          <div className="flex items-center gap-3 mb-2">
+            <h1 className="text-2xl font-bold text-gray-900">
+              {lesson.title}
+            </h1>
+            <button
+              onClick={handleToggleLike}
+              className="text-2xl hover:scale-110 transition"
+            >
+              {liked ? '❤️' : '🤍'}
+            </button>
+          </div>
 
           {lesson.instructor_name && (
             <p className="text-gray-600 mb-4">

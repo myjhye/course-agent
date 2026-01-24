@@ -6,6 +6,7 @@ from app.models.feedback import Feedback
 from app.models.ai_log import AILog
 from app.models.chat import ChatSession, ChatMessage
 from app.models.faq import FAQ
+from app.models.lesson_interest import LessonView, LessonLike
 
 __all__ = [
     "Instructor",
@@ -22,4 +23,6 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "FAQ",
+    "LessonView",
+    "LessonLike",
 ]

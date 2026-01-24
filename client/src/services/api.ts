@@ -76,6 +76,18 @@ export const lessonApi = {
   getPublished: (params?: { page?: number; page_size?: number; sport_type?: string; target_audience?: string; difficulty?: string }) =>
     api.get<PaginatedResponse<Lesson>>('/api/lessons/', { params }),
   getById: (id: number) => api.get<LessonDetail>(`/api/lessons/${id}`),
+
+  // 조회 기록
+  recordView: (lessonId: number, studentName: string) =>
+    api.post(`/api/lessons/${lessonId}/view?student_name=${studentName}`),
+
+  // 찜 토글
+  toggleLike: (lessonId: number, studentName: string) =>
+    api.post(`/api/lessons/${lessonId}/like?student_name=${studentName}`),
+
+  // 찜 상태
+  getLikeStatus: (lessonId: number, studentName: string) =>
+    api.get<{ liked: boolean }>(`/api/lessons/${lessonId}/like-status?student_name=${studentName}`),
 };
 
 // ===== 수강 (운영자) =====
@@ -100,11 +112,29 @@ export const myEnrollmentApi = {
 };
 
 // ===== 추천 (수강생) =====
+// 타입 추가
+export interface CategorizedRecommendations {
+  next_level: RecommendationItem | null;
+  new_sport: RecommendationItem | null;
+  interest_based: RecommendationItem | null;
+}
+
+export interface RecommendationItem {
+  lesson: {
+    id: number;
+    title: string;
+    sport_type: string;
+    difficulty: string;
+    instructor_name: string | null;
+    thumbnail_url: string | null;
+  };
+  reason: string;
+  reason_type: string;
+}
+
 export const myRecommendationApi = {
-  getRecommendations: (studentName: string, limit: number = 3) =>
-    api.get<Recommendation[]>('/api/my/recommendations/', {
-      params: { student_name: studentName, limit }
-    }),
+  getCategorized: (studentName: string) =>
+    api.get<CategorizedRecommendations>(`/api/my/recommendations/?student_name=${studentName}`),
 };
 
 // ===== 대시보드 (운영자) =====
