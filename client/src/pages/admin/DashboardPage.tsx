@@ -14,10 +14,12 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [aiLogs, setAILogs] = useState<AILog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [aiLogsLoading, setAiLogsLoading] = useState(true);
   const [logFilter, setLogFilter] = useState<string>('');
 
   useEffect(() => {
     loadDashboard();
+    loadAILogs(); // 별도로 로드
   }, []);
 
   useEffect(() => {
@@ -36,11 +38,14 @@ export default function DashboardPage() {
   };
 
   const loadAILogs = async () => {
+    setAiLogsLoading(true);
     try {
       const res = await adminDashboardApi.getAILogs(logFilter || undefined, 0, 10);
       setAILogs(res.data);
     } catch (err) {
       console.error(err);
+    } finally {
+      setAiLogsLoading(false);
     }
   };
 
@@ -150,11 +155,20 @@ export default function DashboardPage() {
       {/* AI 로그 */}
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">최근 AI 로그</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold">최근 AI 로그</h2>
+            {aiLogsLoading && (
+              <div className="flex items-center gap-2 text-sm text-purple-600">
+                <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                <span>로드 중...</span>
+              </div>
+            )}
+          </div>
           <select
             value={logFilter}
             onChange={(e) => setLogFilter(e.target.value)}
             className="text-sm border border-gray-300 rounded-lg px-3 py-1.5"
+            disabled={aiLogsLoading}
           >
             <option value="">전체</option>
             {Object.entries(FEATURE_LABELS).map(([value, label]) => (
@@ -165,7 +179,9 @@ export default function DashboardPage() {
           </select>
         </div>
 
-        {aiLogs.length === 0 ? (
+        {aiLogsLoading ? (
+          <AILogsLoadingSkeleton />
+        ) : aiLogs.length === 0 ? (
           <div className="text-center py-8 text-gray-500">로그가 없습니다.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -210,6 +226,46 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// AI 로그 로딩 스켈레톤
+function AILogsLoadingSkeleton() {
+  return (
+    <div className="overflow-x-auto animate-pulse">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">시간</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">기능</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">토큰</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">응답시간</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">수정됨</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-200">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <tr key={i}>
+              <td className="px-4 py-3">
+                <div className="h-4 bg-gray-200 rounded w-32" />
+              </td>
+              <td className="px-4 py-3">
+                <div className="h-5 bg-purple-100 rounded w-20" />
+              </td>
+              <td className="px-4 py-3">
+                <div className="h-4 bg-gray-200 rounded w-16" />
+              </td>
+              <td className="px-4 py-3">
+                <div className="h-4 bg-gray-200 rounded w-14" />
+              </td>
+              <td className="px-4 py-3">
+                <div className="h-4 bg-gray-200 rounded w-10" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

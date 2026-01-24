@@ -8,7 +8,6 @@ import type {
   EnrollmentDetail,
   EnrollmentCreateRequest,
   Feedback,
-  Recommendation,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -88,6 +87,18 @@ export const lessonApi = {
   // 찜 상태
   getLikeStatus: (lessonId: number, studentName: string) =>
     api.get<{ liked: boolean }>(`/api/lessons/${lessonId}/like-status?student_name=${studentName}`),
+
+  // 내가 찜한 강습 목록
+  getLikedLessons: (studentName: string) =>
+    api.get<{
+      id: number;
+      title: string;
+      sport_type: string;
+      difficulty: string;
+      target_audience: string;
+      instructor_name: string | null;
+      thumbnail_url: string | null;
+    }[]>(`/api/lessons/my/liked?student_name=${studentName}`),
 };
 
 // ===== 수강 (운영자) =====

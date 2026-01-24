@@ -51,6 +51,49 @@ async def get_published_lessons(
     }
 
 
+@router.get("/my/liked")
+async def get_liked_lessons(
+    student_name: str = Query(..., description="수강생 이름"),
+    db: AsyncSession = Depends(get_db)
+):
+    """내가 찜한 강습 목록"""
+    from app.models.lesson import Lesson
+    from sqlalchemy.orm import selectinload
+    
+    # 찜한 강습 ID 조회
+    likes_result = await db.execute(
+        select(LessonLike.lesson_id).where(LessonLike.student_name == student_name)
+    )
+    liked_ids = [row[0] for row in likes_result.fetchall()]
+    
+    if not liked_ids:
+        return []
+    
+    # 강습 정보 조회 (발행된 것만)
+    lessons_result = await db.execute(
+        select(Lesson)
+        .options(selectinload(Lesson.contents))
+        .where(Lesson.id.in_(liked_ids), Lesson.status == "published")
+    )
+    lessons = lessons_result.scalars().all()
+    
+    result = []
+    for lesson in lessons:
+        # 활성화된 콘텐츠 찾기
+        active_content = next((c for c in lesson.contents if c.is_active), None)
+        result.append({
+            "id": lesson.id,
+            "title": lesson.title,
+            "sport_type": lesson.sport_type.value if hasattr(lesson.sport_type, 'value') else lesson.sport_type,
+            "difficulty": lesson.difficulty.value if hasattr(lesson.difficulty, 'value') else lesson.difficulty,
+            "target_audience": lesson.target_audience.value if hasattr(lesson.target_audience, 'value') else lesson.target_audience,
+            "instructor_name": None,
+            "thumbnail_url": active_content.thumbnail_url if active_content else None,
+        })
+    
+    return result
+
+
 @router.get("/{lesson_id}", response_model=LessonDetailResponse)
 async def get_lesson_detail(lesson_id: int, db: AsyncSession = Depends(get_db)):
     """강습 상세 (수강생용)"""
@@ -115,4 +158,3 @@ async def get_like_status(
     )
     existing = result.scalar_one_or_none()
     return {"liked": existing is not None}
-

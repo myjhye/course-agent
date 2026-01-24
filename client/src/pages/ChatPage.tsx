@@ -88,7 +88,7 @@ export default function ChatPage() {
   // 이름 입력 화면
   if (showNameInput) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="flex items-center justify-center p-4" style={{ minHeight: 'calc(100vh - 180px)' }}>
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
           <h1 className="text-2xl font-bold text-center mb-2">💬 AI 상담</h1>
           <p className="text-gray-500 text-center mb-6">
@@ -128,22 +128,17 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* 헤더 */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="font-bold text-lg">💬 AI 상담</h1>
-            <p className="text-xs text-gray-500">{studentName}님</p>
-          </div>
-          <Link to="/lessons" className="text-sm text-blue-600 hover:underline">
-            강습 보기
-          </Link>
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 180px)' }}>
+      {/* 채팅 헤더 */}
+      <div className="bg-white border-b">
+        <div className="max-w-3xl mx-auto px-4 py-3">
+          <h1 className="font-bold text-lg">💬 AI 상담</h1>
+          <p className="text-xs text-gray-500">{studentName}님</p>
         </div>
-      </header>
+      </div>
 
       {/* 메시지 영역 */}
-      <main className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto bg-gray-50">
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
           {/* 초기 안내 */}
           {messages.length === 0 && (
@@ -227,11 +222,11 @@ export default function ChatPage() {
 
           <div ref={messagesEndRef} />
         </div>
-      </main>
+      </div>
 
       {/* 입력 영역 */}
-      <footer className="bg-white border-t">
-        <div className="max-w-3xl mx-auto px-4 py-4">
+      <div className="bg-white border-t p-4">
+        <div className="max-w-3xl mx-auto">
           <div className="flex gap-2">
             <input
               type="text"
@@ -251,7 +246,7 @@ export default function ChatPage() {
             </button>
           </div>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

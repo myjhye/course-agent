@@ -1,48 +1,41 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-
-// Admin pages
-import AdminLayout from './pages/admin/AdminLayout';
-import DashboardPage from './pages/admin/DashboardPage';
-import LessonsPage from './pages/admin/LessonsPage';
-import LessonCreatePage from './pages/admin/LessonCreatePage';
-import LessonDetailPage from './pages/admin/LessonDetailPage';
-import InstructorsPage from './pages/admin/InstructorsPage';
-import EnrollmentsPage from './pages/admin/EnrollmentsPage';
-
-// Public/Student pages
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Layout from './components/layout/Layout';
 import HomePage from './pages/HomePage';
-import MyLessonsPage from './pages/my/MyLessonsPage';
-import MyLessonDetailPage from './pages/my/MyLessonDetailPage';
+import LessonsPage from './pages/LessonsPage';
+import LessonDetailPage from './pages/LessonDetailPage';
 import MyEnrollmentsPage from './pages/my/MyEnrollmentsPage';
 import ChatPage from './pages/ChatPage';
+// Admin pages
+import AdminLayout from './components/layout/AdminLayout';
+import DashboardPage from './pages/admin/DashboardPage';
+import AdminLessonsPage from './pages/admin/LessonsPage';
+import AdminLessonCreatePage from './pages/admin/LessonCreatePage';
+import AdminLessonDetailPage from './pages/admin/LessonDetailPage';
+import AdminEnrollmentsPage from './pages/admin/EnrollmentsPage';
 
-function App() {
+export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* 홈 */}
-        <Route path="/" element={<HomePage />} />
-
-        {/* 운영자 */}
-        <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="lessons" element={<LessonsPage />} />
-          <Route path="lessons/new" element={<LessonCreatePage />} />
-          <Route path="lessons/:id" element={<LessonDetailPage />} />
-          <Route path="instructors" element={<InstructorsPage />} />
-          <Route path="enrollments" element={<EnrollmentsPage />} />
+        {/* 일반 사용자 */}
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/lessons" element={<LessonsPage />} />
+          <Route path="/lessons/:id" element={<LessonDetailPage />} />
+          <Route path="/my/enrollments" element={<MyEnrollmentsPage />} />
+          <Route path="/chat" element={<ChatPage />} />
         </Route>
 
-        {/* 수강생 */}
-        <Route path="/lessons" element={<MyLessonsPage />} />
-        <Route path="/lessons/:id" element={<MyLessonDetailPage />} />
-        <Route path="/my/enrollments" element={<MyEnrollmentsPage />} />
-        <Route path="/chat" element={<ChatPage />} />
+        {/* 관리자 */}
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="lessons" element={<AdminLessonsPage />} />
+          <Route path="lessons/new" element={<AdminLessonCreatePage />} />
+          <Route path="lessons/:id" element={<AdminLessonDetailPage />} />
+          <Route path="enrollments" element={<AdminEnrollmentsPage />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
 }
-
-export default App;
 
