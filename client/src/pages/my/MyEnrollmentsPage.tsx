@@ -16,6 +16,7 @@ export default function MyEnrollmentsPage() {
   const [enrollments, setEnrollments] = useState<any[]>([]);
   const [recommendations, setRecommendations] = useState<CategorizedRecommendations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -23,14 +24,10 @@ export default function MyEnrollmentsPage() {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadEnrollments = async () => {
     try {
-      const [enrollRes, recRes] = await Promise.all([
-        myEnrollmentApi.getAll(STUDENT_NAME),
-        myRecommendationApi.getCategorized(STUDENT_NAME)
-      ]);
+      const enrollRes = await myEnrollmentApi.getAll(STUDENT_NAME);
       setEnrollments(enrollRes.data);
-      setRecommendations(recRes.data);
 
       // 페이지네이션 설정 (5개씩)
       const totalItems = enrollRes.data.length;
@@ -41,6 +38,23 @@ export default function MyEnrollmentsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadRecommendations = async () => {
+    setRecommendationsLoading(true);
+    try {
+      const recRes = await myRecommendationApi.getCategorized(STUDENT_NAME);
+      setRecommendations(recRes.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  };
+
+  const loadData = async () => {
+    await loadEnrollments();
+    loadRecommendations(); // 추천은 백그라운드에서 로딩
   };
 
   if (loading) {
@@ -97,10 +111,15 @@ export default function MyEnrollmentsPage() {
         </section>
 
         {/* 추천 강습 */}
-        {hasAnyRecommendation && (
+        {(hasAnyRecommendation || recommendationsLoading) && (
           <section>
             <h2 className="text-xl font-bold mb-6">✨ 맞춤 추천</h2>
-            <div className="space-y-6">
+            {recommendationsLoading ? (
+              <div className="bg-white rounded-xl p-8 text-center text-gray-500">
+                추천 강습을 분석하고 있습니다...
+              </div>
+            ) : (
+              <div className="space-y-6">
 
               {/* 다음 단계 */}
               <RecommendationSection
@@ -127,6 +146,7 @@ export default function MyEnrollmentsPage() {
               />
 
             </div>
+            )}
           </section>
         )}
       </main>
