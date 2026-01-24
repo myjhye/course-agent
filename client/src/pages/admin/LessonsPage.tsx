@@ -21,7 +21,7 @@ export default function LessonsPage() {
   const loadLessons = async () => {
     setLoading(true);
     try {
-      const res = await adminLessonApi.getAll({ page, page_size: 10 });
+      const res = await adminLessonApi.getAll({ page, page_size: 5 });
       setLessons(res.data.items);
       setTotalPages(res.data.total_pages);
       setTotal(res.data.total);

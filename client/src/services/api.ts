@@ -73,7 +73,7 @@ export const adminLessonApi = {
 
 // ===== 강습 (공개) =====
 export const lessonApi = {
-  getPublished: (params?: { page?: number; page_size?: number; sport_type?: string; difficulty?: string }) =>
+  getPublished: (params?: { page?: number; page_size?: number; sport_type?: string; target_audience?: string; difficulty?: string }) =>
     api.get<PaginatedResponse<Lesson>>('/api/lessons/', { params }),
   getById: (id: number) => api.get<LessonDetail>(`/api/lessons/${id}`),
 };

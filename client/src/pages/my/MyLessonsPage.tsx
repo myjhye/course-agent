@@ -1,26 +1,76 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lessonApi } from '../../services/api';
-import type { Lesson } from '../../types';
+import type { Lesson, SportType, TargetAudience, Difficulty } from '../../types';
 import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const SPORT_OPTIONS: { value: SportType | ''; label: string }[] = [
+  { value: '', label: '전체' },
+  ...Object.entries(SPORT_LABELS).map(([value, label]) => ({
+    value: value as SportType,
+    label,
+  })),
+];
+
+const TARGET_OPTIONS: { value: TargetAudience | ''; label: string }[] = [
+  { value: '', label: '전체' },
+  ...Object.entries(TARGET_LABELS).map(([value, label]) => ({
+    value: value as TargetAudience,
+    label,
+  })),
+];
+
+const DIFFICULTY_OPTIONS: { value: Difficulty | ''; label: string }[] = [
+  { value: '', label: '전체' },
+  ...Object.entries(DIFFICULTY_LABELS).map(([value, label]) => ({
+    value: value as Difficulty,
+    label,
+  })),
+];
 
 export default function MyLessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [filters, setFilters] = useState<{
+    sport_type?: string;
+    target_audience?: string;
+    difficulty?: string;
+  }>({});
 
   useEffect(() => {
     loadLessons();
-  }, [page]);
+  }, [page, filters]);
 
   const loadLessons = async () => {
     setLoading(true);
     try {
-      const res = await lessonApi.getPublished({ page, page_size: 12 });
+      const params: {
+        page: number;
+        page_size: number;
+        sport_type?: string;
+        target_audience?: string;
+        difficulty?: string;
+      } = {
+        page,
+        page_size: 6,
+      };
+
+      if (filters.sport_type) {
+        params.sport_type = filters.sport_type;
+      }
+      if (filters.target_audience) {
+        params.target_audience = filters.target_audience;
+      }
+      if (filters.difficulty) {
+        params.difficulty = filters.difficulty;
+      }
+
+      const res = await lessonApi.getPublished(params);
       setLessons(res.data.items);
       setTotalPages(res.data.total_pages);
     } catch (err) {
@@ -28,6 +78,19 @@ export default function MyLessonsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFilterChange = (key: 'sport_type' | 'target_audience' | 'difficulty', value: string) => {
+    setFilters((prev) => {
+      const newFilters = { ...prev };
+      if (value === '') {
+        delete newFilters[key];
+      } else {
+        newFilters[key] = value;
+      }
+      return newFilters;
+    });
+    setPage(1); // 필터 변경 시 첫 페이지로
   };
 
   if (loading) {
@@ -58,6 +121,65 @@ export default function MyLessonsPage() {
       {/* 메인 */}
       <main className="max-w-6xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">강습 목록</h1>
+
+        {/* 필터 */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* 종목 필터 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                종목
+              </label>
+              <select
+                value={filters.sport_type || ''}
+                onChange={(e) => handleFilterChange('sport_type', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {SPORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 대상 필터 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                대상
+              </label>
+              <select
+                value={filters.target_audience || ''}
+                onChange={(e) => handleFilterChange('target_audience', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {TARGET_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 난이도 필터 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                난이도
+              </label>
+              <select
+                value={filters.difficulty || ''}
+                onChange={(e) => handleFilterChange('difficulty', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
 
         {loading ? (
           <div className="text-center py-16 text-gray-500">로딩 중...</div>

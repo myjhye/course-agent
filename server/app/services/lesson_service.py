@@ -141,6 +141,7 @@ class LessonService:
         page: int = 1,
         page_size: int = 12,
         sport_type: Optional[str] = None,
+        target_audience: Optional[str] = None,
         difficulty: Optional[str] = None
     ) -> dict:
         """발행된 강습 목록 (페이징, 최신순)"""
@@ -155,6 +156,10 @@ class LessonService:
         if sport_type:
             query = query.where(Lesson.sport_type == sport_type)
             count_query = count_query.where(Lesson.sport_type == sport_type)
+        
+        if target_audience:
+            query = query.where(Lesson.target_audience == target_audience)
+            count_query = count_query.where(Lesson.target_audience == target_audience)
         
         if difficulty:
             query = query.where(Lesson.difficulty == difficulty)
