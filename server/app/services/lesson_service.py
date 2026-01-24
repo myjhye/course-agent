@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func, desc
+from sqlalchemy import select, and_, func, desc, update
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.models.lesson import Lesson, LessonStatus
 from app.models.lesson_content import LessonContent
+from app.models.ai_log import AILog
 from app.schemas.lesson import LessonCreate, LessonUpdate, UpdateContentRequest
 
 
@@ -312,6 +313,26 @@ class LessonService:
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(content, field, value)
+        
+        # 해당 강습의 가장 최근 AI 콘텐츠 로그의 was_edited를 True로 업데이트
+        latest_log_result = await db.execute(
+            select(AILog.id)
+            .where(
+                and_(
+                    AILog.lesson_id == content.lesson_id,
+                    AILog.feature_type == "content"
+                )
+            )
+            .order_by(desc(AILog.created_at))
+            .limit(1)
+        )
+        latest_log_id = latest_log_result.scalar_one_or_none()
+        if latest_log_id:
+            await db.execute(
+                update(AILog)
+                .where(AILog.id == latest_log_id)
+                .values(was_edited=True)
+            )
         
         await db.commit()
         await db.refresh(content)

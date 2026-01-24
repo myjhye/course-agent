@@ -1,7 +1,9 @@
+import time
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.ai.llm_client import generate_text
 from app.models.feedback import Feedback
 from app.models.enrollment import Enrollment
+from app.models.ai_log import AILog
 
 
 async def generate_feedback(db: AsyncSession, enrollment: Enrollment) -> Feedback:
@@ -17,6 +19,8 @@ async def generate_feedback(db: AsyncSession, enrollment: Enrollment) -> Feedbac
     if not feedback:
         feedback = Feedback(enrollment_id=enrollment.id)
         db.add(feedback)
+    
+    start_time = time.time()
     
     # 수강생 피드백 생성
     student_prompt = f"""
@@ -49,8 +53,28 @@ async def generate_feedback(db: AsyncSession, enrollment: Enrollment) -> Feedbac
 """
     instructor_feedback = await generate_text(instructor_prompt)
     
+    latency_ms = (time.time() - start_time) * 1000
+    
     feedback.student_feedback = student_feedback
     feedback.instructor_feedback = instructor_feedback
+    
+    # AI 로그 저장
+    ai_log = AILog(
+        feature_type="feedback",
+        enrollment_id=enrollment.id,
+        lesson_id=enrollment.lesson_id,
+        input_data={
+            "student_name": enrollment.student_name,
+            "lesson_title": enrollment.lesson.title,
+            "attendance_rate": enrollment.attendance_rate
+        },
+        output_data={
+            "student_feedback_length": len(student_feedback),
+            "instructor_feedback_length": len(instructor_feedback)
+        },
+        latency_ms=latency_ms
+    )
+    db.add(ai_log)
     
     await db.commit()
     await db.refresh(feedback)
