@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, desc
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.models.lesson import Lesson, LessonStatus
@@ -46,6 +46,63 @@ class LessonService:
         ]
     
     @staticmethod
+    async def get_lessons_paginated(
+        db: AsyncSession,
+        page: int = 1,
+        page_size: int = 10,
+        status: Optional[str] = None
+    ) -> dict:
+        """강습 목록 (페이징, 최신순)"""
+        
+        query = select(Lesson).options(
+            selectinload(Lesson.instructor),
+            selectinload(Lesson.contents)
+        )
+        
+        if status:
+            query = query.where(Lesson.status == status)
+        
+        # 전체 개수
+        count_query = select(func.count(Lesson.id))
+        if status:
+            count_query = count_query.where(Lesson.status == status)
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        # 최신순 정렬 + 페이징
+        query = query.order_by(desc(Lesson.created_at))
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        
+        result = await db.execute(query)
+        items = list(result.scalars().all())
+        
+        # active_content 포함하여 반환
+        items_with_content = []
+        for lesson in items:
+            active_content = next((c for c in lesson.contents if c.is_active), None) if lesson.contents else None
+            items_with_content.append({
+                "id": lesson.id,
+                "title": lesson.title,
+                "sport_type": lesson.sport_type.value,
+                "target_audience": lesson.target_audience.value,
+                "difficulty": lesson.difficulty.value,
+                "instructor_id": lesson.instructor_id,
+                "status": lesson.status.value,
+                "created_at": lesson.created_at,
+                "updated_at": lesson.updated_at,
+                "instructor_name": lesson.instructor.name if lesson.instructor else None,
+                "active_content": active_content
+            })
+        
+        return {
+            "items": items_with_content,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
+    
+    @staticmethod
     async def get_published_lessons(
         db: AsyncSession,
         skip: int = 0,
@@ -77,6 +134,66 @@ class LessonService:
             }
             for lesson in lessons
         ]
+    
+    @staticmethod
+    async def get_published_lessons_paginated(
+        db: AsyncSession,
+        page: int = 1,
+        page_size: int = 12,
+        sport_type: Optional[str] = None,
+        difficulty: Optional[str] = None
+    ) -> dict:
+        """발행된 강습 목록 (페이징, 최신순)"""
+        
+        query = select(Lesson).options(
+            selectinload(Lesson.instructor),
+            selectinload(Lesson.contents)
+        ).where(Lesson.status == LessonStatus.PUBLISHED)
+        
+        count_query = select(func.count(Lesson.id)).where(Lesson.status == LessonStatus.PUBLISHED)
+        
+        if sport_type:
+            query = query.where(Lesson.sport_type == sport_type)
+            count_query = count_query.where(Lesson.sport_type == sport_type)
+        
+        if difficulty:
+            query = query.where(Lesson.difficulty == difficulty)
+            count_query = count_query.where(Lesson.difficulty == difficulty)
+        
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        query = query.order_by(desc(Lesson.created_at))
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        
+        result = await db.execute(query)
+        items = list(result.scalars().all())
+        
+        # active_content 포함하여 반환
+        items_with_content = []
+        for lesson in items:
+            active_content = next((c for c in lesson.contents if c.is_active), None) if lesson.contents else None
+            items_with_content.append({
+                "id": lesson.id,
+                "title": lesson.title,
+                "sport_type": lesson.sport_type.value,
+                "target_audience": lesson.target_audience.value,
+                "difficulty": lesson.difficulty.value,
+                "instructor_id": lesson.instructor_id,
+                "status": lesson.status.value,
+                "created_at": lesson.created_at,
+                "updated_at": lesson.updated_at,
+                "instructor_name": lesson.instructor.name if lesson.instructor else None,
+                "active_content": active_content
+            })
+        
+        return {
+            "items": items_with_content,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
     
     @staticmethod
     async def get_lesson_by_id(db: AsyncSession, lesson_id: int) -> Optional[Lesson]:

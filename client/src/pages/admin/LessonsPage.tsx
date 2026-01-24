@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminLessonApi } from '../../services/api';
 import type { Lesson } from '../../types';
+import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, DIFFICULTY_LABELS, STATUS_LABELS } from '../../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -9,15 +10,21 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
   useEffect(() => {
     loadLessons();
-  }, []);
+  }, [page]);
 
   const loadLessons = async () => {
+    setLoading(true);
     try {
-      const res = await adminLessonApi.getAll();
-      setLessons(res.data);
+      const res = await adminLessonApi.getAll({ page, page_size: 10 });
+      setLessons(res.data.items);
+      setTotalPages(res.data.total_pages);
+      setTotal(res.data.total);
     } catch (err) {
       console.error(err);
     } finally {
@@ -25,12 +32,13 @@ export default function LessonsPage() {
     }
   };
 
-  if (loading) return <div>로딩 중...</div>;
-
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">강습 관리</h1>
+        <div>
+          <h1 className="text-2xl font-bold">강습 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">총 {total}개</p>
+        </div>
         <Link
           to="/admin/lessons/new"
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
@@ -39,12 +47,15 @@ export default function LessonsPage() {
         </Link>
       </div>
 
-      {lessons.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+      {loading ? (
+        <div className="text-center py-12 text-gray-500">로딩 중...</div>
+      ) : lessons.length === 0 ? (
+        <div className="text-center py-12 text-gray-500 bg-white rounded-lg">
           등록된 강습이 없습니다.
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -131,6 +142,13 @@ export default function LessonsPage() {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+        </>
       )}
     </div>
   );

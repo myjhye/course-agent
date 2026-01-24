@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lessonApi } from '../../services/api';
 import type { Lesson } from '../../types';
+import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -9,15 +10,19 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export default function MyLessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     loadLessons();
-  }, []);
+  }, [page]);
 
   const loadLessons = async () => {
+    setLoading(true);
     try {
-      const res = await lessonApi.getPublished();
-      setLessons(res.data);
+      const res = await lessonApi.getPublished({ page, page_size: 12 });
+      setLessons(res.data.items);
+      setTotalPages(res.data.total_pages);
     } catch (err) {
       console.error(err);
     } finally {
@@ -54,16 +59,26 @@ export default function MyLessonsPage() {
       <main className="max-w-6xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold mb-6">강습 목록</h1>
 
-        {lessons.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-16 text-gray-500">로딩 중...</div>
+        ) : lessons.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             현재 등록된 강습이 없습니다.
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {lessons.map((lesson) => (
-              <LessonCard key={lesson.id} lesson={lesson} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {lessons.map((lesson) => (
+                <LessonCard key={lesson.id} lesson={lesson} />
+              ))}
+            </div>
+
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
+            />
+          </>
         )}
       </main>
     </div>

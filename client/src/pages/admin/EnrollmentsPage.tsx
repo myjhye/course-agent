@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { adminEnrollmentApi } from '../../services/api';
 import type { EnrollmentDetail, Feedback } from '../../types';
+import Pagination from '../../components/common/Pagination';
 import {
   ENROLLMENT_STATUS_LABELS,
   SPORT_LABELS,
@@ -11,6 +12,9 @@ export default function EnrollmentsPage() {
   const [enrollments, setEnrollments] = useState<EnrollmentDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   
   // 피드백 모달 상태
   const [selectedEnrollment, setSelectedEnrollment] = useState<EnrollmentDetail | null>(null);
@@ -19,15 +23,22 @@ export default function EnrollmentsPage() {
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    loadEnrollments();
+    setPage(1); // 필터 변경 시 첫 페이지로
   }, [statusFilter]);
+
+  useEffect(() => {
+    loadEnrollments();
+  }, [page, statusFilter]);
 
   const loadEnrollments = async () => {
     setLoading(true);
     try {
-      const params = statusFilter ? { status: statusFilter } : undefined;
+      const params: any = { page, page_size: 10 };
+      if (statusFilter) params.status = statusFilter;
       const res = await adminEnrollmentApi.getAll(params);
-      setEnrollments(res.data);
+      setEnrollments(res.data.items);
+      setTotalPages(res.data.total_pages);
+      setTotal(res.data.total);
     } catch (err) {
       console.error(err);
     } finally {
@@ -102,7 +113,10 @@ export default function EnrollmentsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">수강 관리</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">수강 관리</h1>
+        <p className="text-sm text-gray-500 mt-1">총 {total}개</p>
+      </div>
 
       {/* 상태 필터 */}
       <div className="mb-4 flex gap-2 flex-wrap">
@@ -239,6 +253,15 @@ export default function EnrollmentsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* 페이징 */}
+      {enrollments.length > 0 && (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
       )}
 
       {/* 피드백 모달 */}

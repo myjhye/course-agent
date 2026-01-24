@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func, desc
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.models.enrollment import Enrollment, EnrollmentStatus
@@ -84,6 +84,62 @@ class EnrollmentService:
             }
             for enrollment in enrollments
         ]
+    
+    @staticmethod
+    async def get_all_enrollments_paginated(
+        db: AsyncSession,
+        page: int = 1,
+        page_size: int = 10,
+        status: Optional[str] = None,
+        lesson_id: Optional[int] = None
+    ) -> dict:
+        """전체 수강 목록 (페이징, 최신순)"""
+        
+        query = select(Enrollment).options(selectinload(Enrollment.lesson))
+        count_query = select(func.count(Enrollment.id))
+        
+        conditions = []
+        if status:
+            conditions.append(Enrollment.status == status)
+        if lesson_id:
+            conditions.append(Enrollment.lesson_id == lesson_id)
+        
+        if conditions:
+            query = query.where(and_(*conditions))
+            count_query = count_query.where(and_(*conditions))
+        
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        
+        query = query.order_by(desc(Enrollment.created_at))
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        
+        result = await db.execute(query)
+        items = list(result.scalars().all())
+        
+        items_with_lesson = []
+        for enrollment in items:
+            items_with_lesson.append({
+                "id": enrollment.id,
+                "student_name": enrollment.student_name,
+                "lesson_id": enrollment.lesson_id,
+                "status": enrollment.status.value,
+                "attendance_rate": enrollment.attendance_rate,
+                "completion_date": enrollment.completion_date,
+                "created_at": enrollment.created_at,
+                "updated_at": enrollment.updated_at,
+                "lesson_title": enrollment.lesson.title if enrollment.lesson else None,
+                "lesson_sport_type": enrollment.lesson.sport_type.value if enrollment.lesson else None,
+                "lesson_difficulty": enrollment.lesson.difficulty.value if enrollment.lesson else None
+            })
+        
+        return {
+            "items": items_with_lesson,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size
+        }
     
     @staticmethod
     async def get_enrollment_by_id(db: AsyncSession, enrollment_id: int) -> Optional[Enrollment]:
