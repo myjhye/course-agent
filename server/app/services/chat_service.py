@@ -234,9 +234,10 @@ class ChatService:
                     tool_name = tool_call.function.name
                     tool_args = json.loads(tool_call.function.arguments)
                     
-                    # 수강생 이름 자동 주입
-                    if student_name and tool_name in ["get_my_enrollments", "get_recommendations"]:
-                        if "student_name" not in tool_args:
+                    # 수강생 이름 자동 주입 (강화)
+                    if student_name:
+                        if tool_name in ["get_my_enrollments", "get_recommendations"]:
+                            # 항상 덮어쓰기 (LLM이 잘못된 이름 넣는 것 방지)
                             tool_args["student_name"] = student_name
                     
                     # 도구 실행
@@ -283,7 +284,27 @@ class ChatService:
     @staticmethod
     def _build_system_prompt(student_name: Optional[str]) -> str:
         """시스템 프롬프트 생성"""
+        
+        name_instruction = ""
+        if student_name:
+            name_instruction = f"""
+## 수강생 정보
+현재 수강생: {student_name}
+- 이 이름으로 바로 도구를 호출하세요.
+- 이름을 다시 묻지 마세요.
+- get_my_enrollments, get_recommendations 호출 시 student_name="{student_name}"을 사용하세요.
+"""
+        else:
+            name_instruction = """
+## 수강생 정보
+수강생 이름이 확인되지 않았습니다.
+- 수강 현황이나 추천을 요청하면 먼저 이름을 물어보세요.
+- 예: "수강 현황을 확인해드릴게요! 이름을 알려주시겠어요?"
+"""
+
         return f"""당신은 스포츠 강습 플랫폼의 친절한 AI 상담사입니다.
+
+{name_instruction}
 
 ## 도구 사용 규칙
 반드시 제공된 도구를 사용해서 정보를 조회한 후 답변하세요.
@@ -296,20 +317,15 @@ class ChatService:
 ## 멀티스텝 처리
 복잡한 질문은 여러 도구를 순차적으로 사용하세요.
 
-예시 1: "내가 들은 강습 요약하고 다음 추천해줘"
-→ get_my_enrollments로 수강 현황 조회
-→ get_recommendations로 추천 강습 조회
+예시 1: "내 수강 현황이랑 추천 알려줘"
+→ get_my_enrollments 호출
+→ get_recommendations 호출
 → 두 결과를 종합해서 응답
 
-예시 2: "수영 강습 중에 초급 있어? 있으면 자세히 알려줘"
-→ search_lessons로 수영 초급 검색
-→ 결과가 있으면 get_lesson_detail로 상세 조회
+예시 2: "수영 강습 찾아줘, 자세히 알려줘"
+→ search_lessons 호출
+→ get_lesson_detail 호출
 → 종합 응답
-
-예시 3: "환불 규정 알려주고, 내 수강 상태도 확인해줘"
-→ search_faq로 환불 규정 조회
-→ get_my_enrollments로 수강 상태 조회
-→ 두 정보를 함께 응답
 
 ## 응답 규칙
 1. 도구 조회 결과에 있는 정보만 답변하세요.
@@ -326,24 +342,13 @@ class ChatService:
 
 ## 응답 형식 예시
 
-[수강 현황 + 추천 조합]
-{student_name}님의 수강 현황과 추천 강습을 안내해드릴게요! 😊
+[수강 현황 + 추천]
+{student_name or "OOO"}님의 수강 현황과 추천 강습을 안내해드릴게요! 😊
 
 📚 현재 수강 현황
-총 2개의 강습을 수강하고 계세요.
-
-- 성인 수영 입문반 - 수강 완료 ✅ (출석률 95%)
-- 성인 수영 초급반 - 수강 중 (출석률 80%)
+(수강 정보)
 
 ✨ 맞춤 추천 강습
-수강 이력을 바탕으로 추천드려요!
+(추천 정보)
 
-1. 성인 수영 중급반
-   → 초급반을 잘 마치시면 자연스럽게 도전해보세요!
-
-2. 성인 테니스 입문반
-   → 새로운 종목도 도전해보시는 건 어떨까요?
-
-꾸준히 열심히 하고 계시네요! 화이팅입니다! 💪
-
-{f"현재 수강생: {student_name}" if student_name else "수강생 정보가 없습니다. 필요시 이름을 물어보세요."}"""
+꾸준히 열심히 하고 계시네요! 화이팅입니다! 💪"""

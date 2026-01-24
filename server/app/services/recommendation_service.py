@@ -2,15 +2,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, not_
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
-from app.models.lesson import Lesson, LessonStatus, SportType, Difficulty
+from app.models.lesson import Lesson, LessonStatus, SportType, Difficulty, TargetAudience
 from app.models.enrollment import Enrollment, EnrollmentStatus
+from app.models.lesson_content import LessonContent
 from app.models.ai_log import AILog
-from app.services.ai.llm_client import generate_text
+from app.services.ai.llm_client import get_openai_client
 import json
 import time
 
 
-# 난이도 순서
 DIFFICULTY_ORDER = ['beginner', 'elementary', 'intermediate', 'advanced']
 
 
@@ -29,29 +29,33 @@ class RecommendationService:
         # 1. 수강 이력 조회
         enrollment_result = await db.execute(
             select(Enrollment)
-            .options(selectinload(Enrollment.lesson))
+            .options(selectinload(Enrollment.lesson).selectinload(Lesson.instructor))
             .where(Enrollment.student_name == student_name)
         )
         enrollments = list(enrollment_result.scalars().all())
         
-        if not enrollments:
-            # 수강 이력 없으면 인기 강습 추천
-            return await RecommendationService._get_popular_lessons(db, limit)
+        # 2. target_audience 추론
+        inferred_target = RecommendationService._infer_target_audience(enrollments)
         
-        # 2. 수강 중/완료된 강습 ID 목록
+        if not enrollments:
+            # 수강 이력 없으면 "전체" 대상 또는 추론된 대상의 인기 강습 추천
+            return await RecommendationService._get_popular_lessons(db, limit, inferred_target)
+        
+        # 3. 수강 중/완료된 강습 ID 목록
         enrolled_lesson_ids = [e.lesson_id for e in enrollments]
         
-        # 3. 완료된 강습 분석
+        # 4. 완료된 강습 분석
         completed = [e for e in enrollments if e.status == EnrollmentStatus.COMPLETED]
-        in_progress = [e for e in enrollments if e.status in [EnrollmentStatus.ENROLLED, EnrollmentStatus.IN_PROGRESS]]
         
-        # 4. 규칙 기반 추천 후보 생성
+        # 5. 규칙 기반 추천 후보 생성 (target_audience 고려)
         candidates = await RecommendationService._get_candidates(
-            db, enrollments, enrolled_lesson_ids
+            db, enrollments, enrolled_lesson_ids, inferred_target
         )
         
         if not candidates:
-            return await RecommendationService._get_popular_lessons(db, limit, enrolled_lesson_ids)
+            return await RecommendationService._get_popular_lessons(
+                db, limit, inferred_target, enrolled_lesson_ids
+            )
         
         # 5. 상위 N개 선택
         selected = candidates[:limit]
@@ -68,7 +72,8 @@ class RecommendationService:
             input_data={
                 "student_name": student_name,
                 "enrollment_count": len(enrollments),
-                "completed_count": len(completed)
+                "completed_count": len(completed),
+                "inferred_target": inferred_target
             },
             output_data={
                 "recommended_count": len(recommendations),
@@ -82,25 +87,39 @@ class RecommendationService:
         return recommendations
     
     @staticmethod
+    def _infer_target_audience(enrollments: List[Enrollment]) -> Optional[str]:
+        """수강 이력에서 target_audience 추론"""
+        
+        if not enrollments:
+            return None  # 이력 없으면 None (전체 대상만 추천)
+        
+        # 가장 최근 수강의 target_audience 사용
+        for enrollment in sorted(enrollments, key=lambda e: e.created_at, reverse=True):
+            if enrollment.lesson and enrollment.lesson.target_audience:
+                return enrollment.lesson.target_audience.value
+        
+        return None
+    
+    @staticmethod
     async def _get_candidates(
         db: AsyncSession,
         enrollments: List[Enrollment],
-        exclude_ids: List[int]
+        exclude_ids: List[int],
+        inferred_target: Optional[str]
     ) -> List[dict]:
-        """규칙 기반 추천 후보 생성"""
+        """규칙 기반 추천 후보 생성 (target_audience 필터링)"""
         
         candidates = []
         seen_ids = set(exclude_ids)
         
-        # 완료된 강습 기준으로 다음 단계 찾기
         completed = [e for e in enrollments if e.status == EnrollmentStatus.COMPLETED]
         
+        # 1. 같은 종목의 다음 난이도 (우선순위 높음)
         for enrollment in completed:
             lesson = enrollment.lesson
             if not lesson:
                 continue
             
-            # 같은 종목의 다음 난이도
             next_difficulty = RecommendationService._get_next_difficulty(lesson.difficulty.value)
             if next_difficulty:
                 result = await db.execute(
@@ -110,22 +129,27 @@ class RecommendationService:
                         and_(
                             Lesson.sport_type == lesson.sport_type,
                             Lesson.difficulty == next_difficulty,
+                            Lesson.target_audience == lesson.target_audience,  # 같은 대상
                             Lesson.status == LessonStatus.PUBLISHED,
-                            Lesson.target_audience == lesson.target_audience,
                             not_(Lesson.id.in_(seen_ids))
                         )
                     )
                 )
                 for l in result.scalars().all():
                     if l.id not in seen_ids:
-                        candidates.append({"lesson": l, "reason_type": "next_level", "base_lesson": lesson})
+                        candidates.append({
+                            "lesson": l,
+                            "reason_type": "next_level",
+                            "base_lesson": lesson,
+                            "priority": 1
+                        })
                         seen_ids.add(l.id)
         
-        # 다른 종목 입문 추천
+        # 2. 다른 종목 입문 (같은 target_audience)
         completed_sports = set(e.lesson.sport_type for e in completed if e.lesson)
         all_sports = [s for s in SportType if s not in completed_sports]
         
-        if all_sports:
+        if all_sports and inferred_target:
             result = await db.execute(
                 select(Lesson)
                 .options(selectinload(Lesson.contents), selectinload(Lesson.instructor))
@@ -133,6 +157,7 @@ class RecommendationService:
                     and_(
                         Lesson.sport_type.in_(all_sports),
                         Lesson.difficulty == Difficulty.BEGINNER,
+                        Lesson.target_audience == inferred_target,  # 같은 대상만
                         Lesson.status == LessonStatus.PUBLISHED,
                         not_(Lesson.id.in_(seen_ids))
                     )
@@ -141,8 +166,40 @@ class RecommendationService:
             )
             for l in result.scalars().all():
                 if l.id not in seen_ids:
-                    candidates.append({"lesson": l, "reason_type": "new_sport", "base_lesson": None})
+                    candidates.append({
+                        "lesson": l,
+                        "reason_type": "new_sport",
+                        "base_lesson": None,
+                        "priority": 2
+                    })
                     seen_ids.add(l.id)
+        
+        # 3. 같은 target_audience의 다른 강습 (보조)
+        if len(candidates) < 3 and inferred_target:
+            result = await db.execute(
+                select(Lesson)
+                .options(selectinload(Lesson.contents), selectinload(Lesson.instructor))
+                .where(
+                    and_(
+                        Lesson.target_audience == inferred_target,
+                        Lesson.status == LessonStatus.PUBLISHED,
+                        not_(Lesson.id.in_(seen_ids))
+                    )
+                )
+                .limit(3 - len(candidates))
+            )
+            for l in result.scalars().all():
+                if l.id not in seen_ids:
+                    candidates.append({
+                        "lesson": l,
+                        "reason_type": "same_audience",
+                        "base_lesson": None,
+                        "priority": 3
+                    })
+                    seen_ids.add(l.id)
+        
+        # 우선순위 정렬
+        candidates.sort(key=lambda x: x["priority"])
         
         return candidates
     
@@ -161,6 +218,7 @@ class RecommendationService:
     async def _get_popular_lessons(
         db: AsyncSession,
         limit: int,
+        target_audience: Optional[str] = None,
         exclude_ids: List[int] = None
     ) -> List[dict]:
         """인기 강습 반환 (수강 이력 없을 때)"""
@@ -170,21 +228,69 @@ class RecommendationService:
             selectinload(Lesson.instructor)
         ).where(Lesson.status == LessonStatus.PUBLISHED)
         
+        # target_audience 필터
+        if target_audience:
+            # 추론된 대상 또는 "전체" 대상
+            query = query.where(
+                (Lesson.target_audience == target_audience) | 
+                (Lesson.target_audience == TargetAudience.ALL)
+            )
+        else:
+            # 이력 없으면 "전체" 대상만
+            query = query.where(Lesson.target_audience == TargetAudience.ALL)
+        
         if exclude_ids:
             query = query.where(not_(Lesson.id.in_(exclude_ids)))
         
-        query = query.limit(limit)
+        # 입문 난이도 우선
+        query = query.order_by(
+            Lesson.difficulty == Difficulty.BEGINNER,  # 입문 우선
+            Lesson.created_at.desc()
+        ).limit(limit)
+        
         result = await db.execute(query)
         lessons = list(result.scalars().all())
+        
+        if not lessons:
+            # 전체 대상도 없으면 그냥 입문 강습 아무거나
+            fallback_query = select(Lesson).options(
+                selectinload(Lesson.contents),
+                selectinload(Lesson.instructor)
+            ).where(
+                and_(
+                    Lesson.status == LessonStatus.PUBLISHED,
+                    Lesson.difficulty == Difficulty.BEGINNER
+                )
+            ).limit(limit)
+            
+            result = await db.execute(fallback_query)
+            lessons = list(result.scalars().all())
         
         return [
             {
                 "lesson": RecommendationService._lesson_to_dict(l),
-                "reason": "인기 있는 입문 강습입니다. 새로운 운동을 시작해보세요!",
+                "reason": RecommendationService._get_popular_reason(l, target_audience),
                 "reason_type": "popular"
             }
             for l in lessons
         ]
+    
+    @staticmethod
+    def _get_popular_reason(lesson: Lesson, target_audience: Optional[str]) -> str:
+        """인기 강습 추천 이유"""
+        sport_name = {
+            "swimming": "수영",
+            "tennis": "테니스", 
+            "golf": "골프",
+            "fitness": "피트니스",
+            "yoga": "요가",
+            "pilates": "필라테스"
+        }.get(lesson.sport_type.value, lesson.sport_type.value)
+        
+        if target_audience:
+            return f"인기 있는 {sport_name} 입문 강습입니다. 처음 시작하시기 좋아요!"
+        else:
+            return f"누구나 쉽게 시작할 수 있는 {sport_name} 강습입니다!"
     
     @staticmethod
     async def _generate_reasons(
@@ -195,9 +301,11 @@ class RecommendationService:
     ) -> List[dict]:
         """AI로 추천 이유 생성"""
         
+        client = get_openai_client()
+        
         # 수강 이력 텍스트
         history_text = "\n".join([
-            f"- {e.lesson.title} ({e.lesson.sport_type.value}, {e.lesson.difficulty.value}) - {e.status.value}"
+            f"- {e.lesson.title} ({e.lesson.sport_type.value}, {e.lesson.difficulty.value}, {e.lesson.target_audience.value}) - {e.status.value}"
             for e in enrollments if e.lesson
         ])
         
@@ -212,15 +320,19 @@ class RecommendationService:
 ## 수강생: {student_name}
 
 ## 수강 이력
-{history_text}
+{history_text or "(없음)"}
 
 ## 추천 강습
 {recommendations_text}
 
+## 추천 타입별 작성 가이드
+- next_level: 이전 강습에서 배운 내용을 언급하며 다음 단계로의 자연스러운 성장 강조
+- new_sport: 기존 운동 경험과의 시너지, 새로운 도전의 즐거움 강조
+- same_audience: 비슷한 수준의 다른 강습 추천, 다양한 경험 강조
+
 ## 요청사항
 각 강습에 대해 1-2문장으로 친근하고 격려하는 톤으로 추천 이유를 작성해주세요.
-- next_level: 다음 단계로 자연스러운 성장 강조
-- new_sport: 새로운 도전, 기존 운동과의 시너지 강조
+수강 이력의 대상(성인/어린이/시니어)에 맞는 톤으로 작성하세요.
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {{
@@ -232,13 +344,22 @@ class RecommendationService:
 }}"""
 
         try:
-            response_text = await generate_text(prompt)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "당신은 스포츠 강습 플랫폼의 추천 전문가입니다. 수강생의 이력과 대상에 맞는 친근하고 격려하는 톤으로 추천 이유를 작성합니다."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=500,
+                temperature=0.7
+            )
             
-            # JSON 파싱
-            start = response_text.find('{')
-            end = response_text.rfind('}') + 1
+            result_text = response.choices[0].message.content
+            
+            start = result_text.find('{')
+            end = result_text.rfind('}') + 1
             if start >= 0 and end > start:
-                data = json.loads(response_text[start:end])
+                data = json.loads(result_text[start:end])
                 reasons = data.get("reasons", [])
             else:
                 reasons = []
@@ -250,7 +371,7 @@ class RecommendationService:
         # 결과 조합
         results = []
         for i, candidate in enumerate(candidates):
-            reason = reasons[i] if i < len(reasons) else RecommendationService._get_default_reason(candidate['reason_type'])
+            reason = reasons[i] if i < len(reasons) else RecommendationService._get_default_reason(candidate['reason_type'], candidate.get('base_lesson'))
             results.append({
                 "lesson": RecommendationService._lesson_to_dict(candidate['lesson']),
                 "reason": reason,
@@ -260,12 +381,14 @@ class RecommendationService:
         return results
     
     @staticmethod
-    def _get_default_reason(reason_type: str) -> str:
+    def _get_default_reason(reason_type: str, base_lesson: Optional[Lesson] = None) -> str:
         """기본 추천 이유"""
-        if reason_type == "next_level":
-            return "이전 단계를 성공적으로 마치셨으니, 다음 단계로 도전해보세요!"
+        if reason_type == "next_level" and base_lesson:
+            return f"{base_lesson.title}을 잘 마치셨으니, 다음 단계로 도전해보세요!"
         elif reason_type == "new_sport":
             return "새로운 종목에 도전해보세요! 다양한 운동 경험이 건강에 좋습니다."
+        elif reason_type == "same_audience":
+            return "비슷한 수준의 다른 강습도 함께 들어보시는 건 어떨까요?"
         else:
             return "이 강습을 추천드립니다."
     
