@@ -17,5 +17,6 @@ class RecommendedLesson(BaseModel):
 class RecommendationResponse(BaseModel):
     lesson: RecommendedLesson
     reason: str
-    reason_type: str  # next_level, new_sport, popular
+    reason_type: str  # next_level, new_sport, interest_based
+    match_score: Optional[int] = None  # 매칭률 (0-99)
 

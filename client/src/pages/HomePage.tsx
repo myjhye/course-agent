@@ -15,6 +15,16 @@ const CATEGORIES = [
   { id: 'fitness', name: '피트니스', icon: 'fitness_center', hoverBorder: 'hover:border-orange-200', hoverBg: 'hover:bg-orange-50/50', hoverText: 'group-hover:text-orange-600', hoverTextDark: 'group-hover:text-orange-800' },
 ];
 
+// Sport type to Material Symbol icon mapping
+const SPORT_ICONS: Record<string, string> = {
+  swimming: 'pool',
+  tennis: 'sports_tennis',
+  golf: 'sports_golf',
+  yoga: 'self_improvement',
+  pilates: 'accessibility_new',
+  fitness: 'fitness_center',
+};
+
 // Recommendation category styling
 const REC_STYLES = {
   next_level: {
@@ -127,58 +137,74 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Floating Visual */}
-            <div className="w-full max-w-[380px] shrink-0 hidden lg:block">
-              <div className="relative bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-5 shadow-2xl">
-                {/* Card Header */}
-                <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-3">
-                  <div>
-                    <h3 className="text-white font-bold text-base">이번 주 추천</h3>
-                    <p className="text-slate-400 text-xs">{STUDENT_NAME}님의 최근 활동 기반</p>
-                  </div>
-                  <div className="size-9 rounded-full bg-primary/20 flex items-center justify-center text-primary animate-pulse">
-                    <span className="material-symbols-outlined text-[20px]">recommend</span>
-                  </div>
-                </div>
-
-                {/* Main Image */}
-                <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden mb-3 group bg-gradient-to-br from-blue-500/20 to-purple-500/20">
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10"></div>
-                  <div className="absolute bottom-3 left-3 z-20">
-                    <span className="px-2 py-1 bg-primary text-white text-xs font-bold rounded-md">98% Match</span>
-                  </div>
-                  <div className="w-full h-full flex items-center justify-center">
-                    <span className="material-symbols-outlined text-6xl text-white/30">sports_tennis</span>
-                  </div>
-                </div>
-
-                {/* Card Details */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-start">
+            {/* Floating Visual - Shows first recommendation */}
+            {recList.length > 0 && (
+              <div className="w-full max-w-[380px] shrink-0 hidden lg:block">
+                <Link
+                  to={`/lessons/${recList[0].data.lesson.id}`}
+                  className="relative block bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-2xl p-5 shadow-2xl hover:border-slate-600 transition-colors"
+                >
+                  {/* Card Header */}
+                  <div className="flex items-center justify-between mb-3 border-b border-slate-700/50 pb-3">
                     <div>
-                      <h4 className="text-white font-bold text-sm">프로 테니스: 서브 마스터</h4>
-                      <p className="text-slate-400 text-xs">코치 김선우</p>
+                      <h3 className="text-white font-bold text-base">이번 주 추천</h3>
+                      <p className="text-slate-400 text-xs">{STUDENT_NAME}님의 최근 활동 기반</p>
                     </div>
-                    <div className="flex text-yellow-400 text-xs">
-                      <span className="material-symbols-outlined text-[14px]">star</span>
-                      <span className="ml-1 text-white">4.9</span>
+                    <div className="size-9 rounded-full bg-primary/20 flex items-center justify-center text-primary animate-pulse">
+                      <span className="material-symbols-outlined text-[20px]">recommend</span>
                     </div>
                   </div>
 
-                  {/* AI Insight Bubble */}
-                  <div className="bg-primary/10 border border-primary/20 rounded-lg p-2.5 flex gap-2">
-                    <span className="material-symbols-outlined text-primary shrink-0 text-[18px]">auto_awesome</span>
-                    <p className="text-blue-200 text-[11px] leading-relaxed">
-                      "상체 근력 강화에 초점을 맞춘 강습으로, 서브 파워 향상 목표에 적합합니다."
-                    </p>
+                  {/* Main Image */}
+                  <div className="relative w-full aspect-[4/3] rounded-lg overflow-hidden mb-3 group">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent z-10"></div>
+                    <div className="absolute bottom-3 left-3 z-20 flex items-center gap-2">
+                      <span className={`px-2 py-1 ${REC_STYLES[recList[0].key as keyof typeof REC_STYLES].badge} text-white text-xs font-bold rounded-md`}>
+                        {REC_STYLES[recList[0].key as keyof typeof REC_STYLES].label}
+                      </span>
+                      {recList[0].data.match_score && (
+                        <span className="px-2 py-1 bg-white/90 text-slate-800 text-xs font-bold rounded-md">
+                          {recList[0].data.match_score}% Match
+                        </span>
+                      )}
+                    </div>
+                    {recList[0].data.lesson.thumbnail_url ? (
+                      <img
+                        src={`${API_BASE}${recList[0].data.lesson.thumbnail_url}`}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-6xl text-white/30">
+                          {SPORT_ICONS[recList[0].data.lesson.sport_type] || 'sports'}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                {/* Decorative floating elements */}
-                <div className="absolute -z-10 -top-4 -right-4 w-20 h-20 bg-purple-500 rounded-2xl opacity-20 rotate-12"></div>
-                <div className="absolute -z-10 -bottom-6 -left-6 w-24 h-24 bg-blue-500 rounded-full opacity-20 blur-xl"></div>
+                  {/* Card Details */}
+                  <div className="space-y-2">
+                    <div>
+                      <h4 className="text-white font-bold text-sm">{recList[0].data.lesson.title}</h4>
+                      <p className="text-slate-400 text-xs">{recList[0].data.lesson.instructor_name || '강사 미정'}</p>
+                    </div>
+
+                    {/* AI Insight Bubble */}
+                    <div className="bg-primary/10 border border-primary/20 rounded-lg p-2.5 flex gap-2">
+                      <span className="material-symbols-outlined text-primary shrink-0 text-[18px]">auto_awesome</span>
+                      <p className="text-blue-200 text-[11px] leading-relaxed line-clamp-2">
+                        "{recList[0].data.reason}"
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Decorative floating elements */}
+                  <div className="absolute -z-10 -top-4 -right-4 w-20 h-20 bg-purple-500 rounded-2xl opacity-20 rotate-12"></div>
+                  <div className="absolute -z-10 -bottom-6 -left-6 w-24 h-24 bg-blue-500 rounded-full opacity-20 blur-xl"></div>
+                </Link>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -324,12 +350,7 @@ function RecommendationCard({ type, item }: { type: keyof typeof REC_STYLES; ite
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center group-hover:scale-105 transition-transform duration-500">
             <span className="material-symbols-outlined text-4xl text-slate-400">
-              {item.lesson.sport_type === 'swimming' && 'pool'}
-              {item.lesson.sport_type === 'tennis' && 'sports_tennis'}
-              {item.lesson.sport_type === 'golf' && 'sports_golf'}
-              {item.lesson.sport_type === 'yoga' && 'self_improvement'}
-              {item.lesson.sport_type === 'pilates' && 'accessibility_new'}
-              {item.lesson.sport_type === 'fitness' && 'fitness_center'}
+              {SPORT_ICONS[item.lesson.sport_type] || 'sports'}
             </span>
           </div>
         )}
@@ -363,7 +384,16 @@ function RecommendationCard({ type, item }: { type: keyof typeof REC_STYLES; ite
               {item.lesson.instructor_name || '강사 미정'}
             </span>
           </div>
-          <span className="text-primary font-bold text-sm">95% Match</span>
+          {item.match_score && (
+            <span className={`font-bold text-sm ${
+              item.match_score >= 90 ? 'text-green-600' :
+              item.match_score >= 80 ? 'text-blue-600' :
+              item.match_score >= 70 ? 'text-indigo-600' :
+              'text-slate-600'
+            }`}>
+              {item.match_score}% Match
+            </span>
+          )}
         </div>
       </div>
     </Link>
@@ -392,12 +422,7 @@ function PopularCard({ lesson, rank }: { lesson: any; rank: number }) {
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-700">
             <span className="material-symbols-outlined text-4xl text-slate-400">
-              {lesson.sport_type === 'swimming' && 'pool'}
-              {lesson.sport_type === 'tennis' && 'sports_tennis'}
-              {lesson.sport_type === 'golf' && 'sports_golf'}
-              {lesson.sport_type === 'yoga' && 'self_improvement'}
-              {lesson.sport_type === 'pilates' && 'accessibility_new'}
-              {lesson.sport_type === 'fitness' && 'fitness_center'}
+              {SPORT_ICONS[lesson.sport_type] || 'sports'}
             </span>
           </div>
         )}

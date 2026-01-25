@@ -134,10 +134,16 @@ class RecommendationService:
 
             next_lesson = result.scalar_one_or_none()
             if next_lesson:
+                # 매칭률 계산: 출석률 기반 + 완료 보너스
+                base_score = enrollment.attendance_rate or 70
+                completion_bonus = 10 if enrollment.status == EnrollmentStatus.COMPLETED else 0
+                match_score = min(int(base_score * 0.9 + completion_bonus), 99)
+
                 return {
                     "lesson": RecommendationService._lesson_to_dict(next_lesson),
                     "reason_type": "next_level",
-                    "base_lesson_title": lesson.title
+                    "base_lesson_title": lesson.title,
+                    "match_score": match_score
                 }
 
         return None
@@ -177,10 +183,15 @@ class RecommendationService:
 
         lesson = result.scalar_one_or_none()
         if lesson:
+            # 매칭률 계산: 기본 70% + 완료 수강 수 × 5% (최대 90%)
+            completed_count = len([e for e in enrollments if e.status == EnrollmentStatus.COMPLETED])
+            match_score = min(70 + completed_count * 5, 90)
+
             return {
                 "lesson": RecommendationService._lesson_to_dict(lesson),
                 "reason_type": "new_sport",
-                "base_lesson": None
+                "base_lesson": None,
+                "match_score": match_score
             }
 
         return None
@@ -216,7 +227,8 @@ class RecommendationService:
                 "lesson": RecommendationService._lesson_to_dict(liked_lesson),
                 "reason_type": "interest_based",
                 "interest_source": "like",
-                "base_lesson": None
+                "base_lesson": None,
+                "match_score": 85  # 찜 = 높은 관심
             }
 
         # 2. 자주 조회한 종목의 강습
@@ -235,6 +247,7 @@ class RecommendationService:
         top_sport_row = view_stats.first()
         if top_sport_row:
             top_sport = top_sport_row[0]
+            view_count = top_sport_row[1]
 
             # 해당 종목의 미등록 강습
             result = await db.execute(
@@ -253,11 +266,15 @@ class RecommendationService:
 
             lesson = result.scalar_one_or_none()
             if lesson:
+                # 조회 수 기반 점수: 50% + 조회 수 × 10% (최대 80%)
+                match_score = min(50 + view_count * 10, 80)
+
                 return {
                     "lesson": RecommendationService._lesson_to_dict(lesson),
                     "reason_type": "interest_based",
                     "interest_source": "view",
-                    "base_lesson": None
+                    "base_lesson": None,
+                    "match_score": match_score
                 }
 
         return None
