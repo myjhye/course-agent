@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { courseApi } from '../services/api';
-import type { Course } from '../types';
+import { lessonApi } from '../services/api';
+import type { Lesson } from '../types';
+import { SPORT_LABELS } from '../constants/labels';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const DEFAULT_THUMBNAIL = '/default-thumbnail.jpeg';
 
 export default function CoursesPage() {
-  const [courses, setCourses] = useState<Course[]>([]);
+  const [courses, setCourses] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const data = await courseApi.getCourses();
-        setCourses(data);
+        const res = await lessonApi.getPublished();
+        setCourses(res.data.items);
       } catch (err) {
         console.error(err);
       } finally {
@@ -24,59 +26,79 @@ export default function CoursesPage() {
     fetchCourses();
   }, []);
 
-  const getThumbnailUrl = (url: string | null) => {
+  const getThumbnailUrl = (url: string | null | undefined) => {
     if (!url) return DEFAULT_THUMBNAIL;
-    // 서버 URL 붙이기
     if (url.startsWith('/')) {
-      return `http://localhost:8000${url}`;
+      return `${API_BASE}${url}`;
     }
     return url;
   };
 
-  if (loading) return <div className="p-8">로딩 중...</div>;
+  if (loading) return <div className="p-8 text-center">로딩 중...</div>;
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">강의 목록</h1>
+        <h1 className="text-3xl font-bold text-slate-900">강습 목록</h1>
         <Link 
-          to="/courses/new" 
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          to="/lessons/new" 
+          className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/20"
         >
-          + 새 강의
+          + 새 강습 만들기
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {courses.map(course => (
-          <Link 
-            key={course.id} 
-            to={`/courses/${course.id}`}
-            className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
-          >
-            <img 
-              src={getThumbnailUrl(course.thumbnail_url)} 
-              alt={course.title}
-              className="w-full h-48 object-cover bg-gray-200"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = DEFAULT_THUMBNAIL;
-              }}
-            />
-            <div className="p-4">
-              <span className="text-sm text-blue-500">{course.category}</span>
-              <h2 className="text-lg font-semibold mt-1">{course.title}</h2>
-              {course.description && (
-                <p className="text-gray-600 text-sm mt-2 line-clamp-2">
-                  {course.description}
-                </p>
-              )}
-            </div>
-          </Link>
-        ))}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {courses.map(course => {
+          const thumbnail = course.active_content?.thumbnail_url;
+          const introduction = course.active_content?.introduction;
+
+          return (
+            <Link 
+              key={course.id} 
+              to={`/lessons/${course.id}`}
+              className="group bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-xl hover:border-blue-400 transition-all duration-300"
+            >
+              <div className="relative aspect-video bg-slate-100 overflow-hidden">
+                <img 
+                  src={getThumbnailUrl(thumbnail)} 
+                  alt={course.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = DEFAULT_THUMBNAIL;
+                  }}
+                />
+                <div className="absolute top-3 left-3">
+                  <span className="bg-white/90 backdrop-blur px-2.5 py-1 rounded-lg text-xs font-bold text-blue-600 shadow-sm">
+                    {SPORT_LABELS[course.sport_type] || course.sport_type}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {course.difficulty} · {course.target_audience}
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 mb-2 group-hover:text-blue-600 transition-colors">
+                  {course.title}
+                </h2>
+                {introduction && (
+                  <p className="text-slate-500 text-sm line-clamp-2 leading-relaxed">
+                    {introduction}
+                  </p>
+                )}
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {courses.length === 0 && (
-        <p className="text-center text-gray-500 mt-8">등록된 강의가 없습니다.</p>
+        <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200 mt-8">
+          <p className="text-slate-400 font-medium">등록된 강습이 없습니다.</p>
+        </div>
       )}
     </div>
   );

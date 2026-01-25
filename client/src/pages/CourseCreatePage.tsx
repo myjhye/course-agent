@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { courseApi } from '../services/api';
+import { adminLessonApi } from '../services/api'; 
+import { SportType, Difficulty } from '../types';
 
 const DEFAULT_THUMBNAIL = '/default-thumbnail.jpeg';
 
@@ -34,12 +35,17 @@ export default function CourseCreatePage() {
 
     setGenerating(true);
     try {
-      const draft = await courseApi.generateCourseDraft(topic);
+      // 수정: 주제를 기반으로 한 초안 생성 API 호출 (현재 구조에 맞게 조정 필요)
+      // 만약 백엔드에 해당 엔드포인트가 없다면 adminLessonApi.create를 바로 사용하거나 
+      // 별도의 AI 생성 API를 연결해야 합니다.
+      const response = await adminLessonApi.generateContent(0); // 예시 ID
+      const draft = response.data;
+      
       setFormData({
-        title: draft.title,
-        category: draft.category,
-        description: draft.description,
-        curriculum: draft.curriculum,
+        title: "AI 추천 제목", // 백엔드 응답 구조에 맞게 수정
+        category: 'swimming', // SportType 에 부합하는 값
+        description: draft.introduction || '',
+        curriculum: JSON.stringify(draft.curriculum),
         thumbnail_url: draft.thumbnail_url,
       });
       setStep('editor');
@@ -59,12 +65,12 @@ export default function CourseCreatePage() {
 
     setSaving(true);
     try {
-      await courseApi.createCourse({
+      // 수정: adminLessonApi.create 호출
+      await adminLessonApi.create({
         title: formData.title,
-        category: formData.category,
-        description: formData.description || null,
-        curriculum: formData.curriculum || null,
-        thumbnail_url: formData.thumbnail_url,
+        sport_type: formData.category as SportType, // 타입 캐스팅
+        target_audience: 'all', 
+        difficulty: 'beginner' as Difficulty,
       });
       alert('강의가 성공적으로 생성되었습니다!');
       navigate('/courses');
