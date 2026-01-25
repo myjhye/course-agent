@@ -255,10 +255,11 @@ function LessonCard({
   liked,
   onToggleLike
 }: {
-  lesson: Lesson & { active_content?: { thumbnail_url?: string | null } };
+  lesson: Lesson;
   liked: boolean;
   onToggleLike: (lessonId: number, e: React.MouseEvent) => void;
 }) {
+  // active_content가 null일 수 있으므로 옵셔널 체이닝 사용
   const thumbnailUrl = lesson.active_content?.thumbnail_url
     ? `${API_BASE}${lesson.active_content.thumbnail_url}`
     : null;
