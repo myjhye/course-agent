@@ -23,29 +23,7 @@ class LessonUpdate(BaseModel):
     status: Optional[LessonStatus] = None
 
 
-# 강습 응답 (기본)
-class LessonResponse(BaseModel):
-    id: int
-    title: str
-    sport_type: SportType
-    target_audience: TargetAudience
-    difficulty: Difficulty
-    instructor_id: Optional[int]
-    status: LessonStatus
-    created_at: datetime
-    updated_at: datetime
-    active_content: Optional["LessonContentResponse"] = None  # 공개 목록용 썸네일 포함
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# 강습 상세 응답 (콘텐츠 포함)
-class LessonDetailResponse(LessonResponse):
-    instructor_name: Optional[str] = None
-    active_content: Optional["LessonContentResponse"] = None
-
-
-# 콘텐츠 응답
+# 콘텐츠 응답 (LessonResponse보다 먼저 정의)
 class LessonContentResponse(BaseModel):
     id: int
     lesson_id: int
@@ -57,6 +35,28 @@ class LessonContentResponse(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# 강습 응답 (기본)
+class LessonResponse(BaseModel):
+    id: int
+    title: str
+    sport_type: SportType
+    target_audience: TargetAudience
+    difficulty: Difficulty
+    instructor_id: Optional[int]
+    status: LessonStatus
+    created_at: datetime
+    updated_at: datetime
+    active_content: Optional[LessonContentResponse] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# 강습 상세 응답 (콘텐츠 포함)
+class LessonDetailResponse(LessonResponse):
+    instructor_name: Optional[str] = None
+    active_content: Optional[LessonContentResponse] = None
 
 
 # 콘텐츠 생성 요청
@@ -74,3 +74,7 @@ class UpdateContentRequest(BaseModel):
 class RegenerateWeekRequest(BaseModel):
     week_number: int
 
+
+# Forward reference 해결을 위한 안전장치
+LessonResponse.model_rebuild()
+LessonDetailResponse.model_rebuild()
