@@ -215,7 +215,7 @@ class EnrollmentService:
         if not enrollment:
             return False
         
-        db.delete(enrollment)
+        await db.delete(enrollment)
         await db.commit()
         return True
     

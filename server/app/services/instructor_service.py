@@ -30,7 +30,7 @@ class InstructorService:
         if not instructor:
             return False
         
-        db.delete(instructor)
+        await db.delete(instructor)
         await db.commit()
         return True
 

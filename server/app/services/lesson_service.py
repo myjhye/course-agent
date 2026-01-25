@@ -275,7 +275,7 @@ class LessonService:
         if not lesson:
             return False
         
-        db.delete(lesson)
+        await db.delete(lesson)
         await db.commit()
         return True
     
