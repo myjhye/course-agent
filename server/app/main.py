@@ -62,6 +62,10 @@ app.include_router(my_recommendations_router)
 app.include_router(chat_router)
 
 # 정적 파일 서빙 (썸네일 이미지)
+# static/thumbnails 폴더가 없으면 에러가 날 수 있으므로 생성
+if not os.path.exists("static/thumbnails"):
+    os.makedirs("static/thumbnails")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
