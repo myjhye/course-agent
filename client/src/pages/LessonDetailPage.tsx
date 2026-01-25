@@ -6,25 +6,25 @@ import { lessonApi, myEnrollmentApi } from '../services/api';
 import { DIFFICULTY_LABELS, SPORT_LABELS, TARGET_LABELS } from '../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const STUDENT_NAME = '홍길동'; // 하드코딩
+const STUDENT_NAME = '홍길동';
 
-// 종목별 아이콘
+// Material Symbols 아이콘 매핑
 const SPORT_ICONS: Record<string, string> = {
-  swimming: '🏊',
-  tennis: '🎾',
-  golf: '⛳',
-  yoga: '🧘',
-  pilates: '🤸',
-  fitness: '💪',
-  other: '🏃',
+  swimming: 'pool',
+  tennis: 'sports_tennis',
+  golf: 'sports_golf',
+  yoga: 'self_improvement',
+  pilates: 'accessibility_new',
+  fitness: 'fitness_center',
+  other: 'sports',
 };
 
-// 난이도별 색상
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'bg-green-100 text-green-700',
-  elementary: 'bg-blue-100 text-blue-700',
-  intermediate: 'bg-yellow-100 text-yellow-700',
-  advanced: 'bg-red-100 text-red-700',
+// 난이도별 스타일
+const DIFFICULTY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  beginner: { bg: 'bg-green-500/10', text: 'text-green-400', border: 'border-green-500/20' },
+  elementary: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
+  intermediate: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/20' },
+  advanced: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20' },
 };
 
 export default function LessonDetailPage() {
@@ -102,7 +102,6 @@ export default function LessonDetailPage() {
       console.error(err);
       const errorDetail = err.response?.data?.detail || '';
       
-      // 중복 수강 에러 처리
       if (errorDetail.includes('DUPLICATE_ENROLLMENT')) {
         alert(`😊 ${studentName.trim()}님은 이미 이 강습을 수강 중이에요!\n\n내 수강 현황에서 확인해보세요.`);
       } else {
@@ -115,10 +114,10 @@ export default function LessonDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center bg-background-light">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-gray-500">강습 정보를 불러오는 중...</p>
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-500">강습 정보를 불러오는 중...</p>
         </div>
       </div>
     );
@@ -126,15 +125,16 @@ export default function LessonDetailPage() {
 
   if (!lesson) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center bg-background-light">
         <div className="text-center">
-          <div className="text-6xl mb-4">😢</div>
-          <p className="text-gray-500 mb-4">강습을 찾을 수 없습니다.</p>
+          <span className="material-symbols-outlined text-6xl text-slate-300 mb-4">sentiment_dissatisfied</span>
+          <p className="text-slate-500 mb-4">강습을 찾을 수 없습니다.</p>
           <Link
             to="/lessons"
-            className="inline-flex items-center text-blue-600 hover:text-blue-700 font-medium"
+            className="inline-flex items-center gap-2 text-primary hover:underline font-medium"
           >
-            ← 강습 목록으로 돌아가기
+            <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+            강습 목록으로 돌아가기
           </Link>
         </div>
       </div>
@@ -145,83 +145,100 @@ export default function LessonDetailPage() {
   const thumbnailUrl = content?.thumbnail_url
     ? `${API_BASE}${content.thumbnail_url}`
     : null;
-  const sportIcon = SPORT_ICONS[lesson.sport_type] || '🏃';
-  const difficultyColor = DIFFICULTY_COLORS[lesson.difficulty] || 'bg-gray-100 text-gray-700';
+  const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
+  const difficultyStyle = DIFFICULTY_STYLES[lesson.difficulty] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
 
   return (
-    <div className="bg-gray-50 min-h-screen">
-      {/* 히어로 섹션 */}
-      <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          {/* 브레드크럼 */}
-          <nav className="flex items-center gap-2 text-sm text-gray-400 mb-6">
-            <Link to="/" className="hover:text-white transition">홈</Link>
-            <span>›</span>
-            <Link to="/lessons" className="hover:text-white transition">강습</Link>
-            <span>›</span>
-            <span className="text-gray-300">{SPORT_LABELS[lesson.sport_type]}</span>
+    <div className="bg-background-light min-h-screen">
+      {/* Hero Section */}
+      <div className="relative bg-navy border-b border-slate-800 pt-8 pb-12">
+        {/* Background Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-b from-slate-900 to-navy opacity-90 pointer-events-none"></div>
+        {/* Abstract Glow */}
+        <div className="absolute -top-24 right-0 w-[500px] h-[500px] bg-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Breadcrumbs */}
+          <nav className="flex mb-6 text-sm font-medium text-slate-400">
+            <ol className="flex items-center space-x-2">
+              <li><Link to="/" className="hover:text-primary transition-colors">홈</Link></li>
+              <li><span className="text-slate-600">/</span></li>
+              <li><Link to="/lessons" className="hover:text-primary transition-colors">강습</Link></li>
+              <li><span className="text-slate-600">/</span></li>
+              <li className="text-white">{SPORT_LABELS[lesson.sport_type]}</li>
+            </ol>
           </nav>
 
-          <div className="grid lg:grid-cols-2 gap-8 items-center">
-            {/* 썸네일 */}
-            <div className="aspect-video rounded-2xl overflow-hidden bg-gray-700 shadow-2xl">
-              {thumbnailUrl ? (
-                <img
-                  src={thumbnailUrl}
-                  alt={lesson.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-8xl bg-gradient-to-br from-gray-700 to-gray-800">
-                  {sportIcon}
-                </div>
-              )}
+          <div className="grid lg:grid-cols-12 gap-8 items-start">
+            {/* Left: Thumbnail (7 cols) */}
+            <div className="lg:col-span-7 w-full">
+              <div className="relative aspect-video w-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 bg-slate-900">
+                {thumbnailUrl ? (
+                  <img
+                    src={thumbnailUrl}
+                    alt={lesson.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[120px] text-slate-600">{sportIcon}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* 기본 정보 */}
-            <div>
-              {/* 뱃지 */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <span className="bg-blue-600 text-white text-sm px-3 py-1 rounded-full font-medium">
-                  {sportIcon} {SPORT_LABELS[lesson.sport_type]}
+            {/* Right: Info (5 cols) */}
+            <div className="lg:col-span-5 flex flex-col justify-center h-full space-y-6">
+              {/* Badges */}
+              <div className="flex flex-wrap gap-2">
+                <span className="px-3 py-1 rounded-full bg-primary/20 text-primary text-xs font-bold border border-primary/20 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">{sportIcon}</span>
+                  {SPORT_LABELS[lesson.sport_type]}
                 </span>
-                <span className={`text-sm px-3 py-1 rounded-full font-medium ${difficultyColor}`}>
+                <span className={`px-3 py-1 rounded-full ${difficultyStyle.bg} ${difficultyStyle.text} text-xs font-bold border ${difficultyStyle.border}`}>
                   {DIFFICULTY_LABELS[lesson.difficulty]}
                 </span>
-                <span className="bg-gray-700 text-gray-300 text-sm px-3 py-1 rounded-full">
+                <span className="px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-xs font-bold border border-purple-500/20">
                   {TARGET_LABELS[lesson.target_audience]}
                 </span>
               </div>
 
-              {/* 제목 */}
-              <h1 className="text-3xl lg:text-4xl font-bold mb-4 leading-tight">
+              {/* Title */}
+              <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-tight">
                 {lesson.title}
               </h1>
 
-              {/* 강사 정보 */}
+              {/* Instructor */}
               {lesson.instructor_name && (
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    {lesson.instructor_name.charAt(0)}
+                <div className="flex items-center gap-4 pt-2">
+                  <div className="relative">
+                    <div className="h-12 w-12 rounded-full p-[2px] bg-gradient-to-tr from-primary via-purple-500 to-orange-400">
+                      <div className="rounded-full h-full w-full bg-navy flex items-center justify-center text-white font-bold">
+                        {lesson.instructor_name.charAt(0)}
+                      </div>
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-navy">
+                      PRO
+                    </div>
                   </div>
                   <div>
-                    <p className="font-medium">{lesson.instructor_name}</p>
-                    <p className="text-sm text-gray-400">전문 강사</p>
+                    <p className="text-white font-semibold">{lesson.instructor_name}</p>
+                    <p className="text-slate-400 text-sm">전문 강사</p>
                   </div>
                 </div>
               )}
 
-              {/* 액션 버튼 (모바일) */}
-              <div className="lg:hidden flex gap-3">
+              {/* Mobile Action Buttons */}
+              <div className="lg:hidden flex gap-3 pt-4 border-t border-slate-800">
                 <button
                   onClick={handleToggleLike}
                   className={`flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition ${
                     liked
                       ? 'bg-red-500 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
                   }`}
                 >
-                  {liked ? '❤️' : '🤍'} 찜하기
+                  {liked ? '❤️ 찜했어요!' : '🤍 찜하기'}
                 </button>
                 <button
                   onClick={() => setShowEnrollForm(true)}
@@ -235,178 +252,189 @@ export default function LessonDetailPage() {
         </div>
       </div>
 
-      {/* 메인 콘텐츠 */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* 왼쪽: 콘텐츠 영역 */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* 탭 네비게이션 */}
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex border-b">
+      {/* Content Area */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="grid lg:grid-cols-12 gap-10">
+          {/* Left Column: Tabs & Content (8 Cols) */}
+          <div className="lg:col-span-8 space-y-10">
+            {/* Tabs */}
+            <div className="border-b border-slate-200">
+              <nav className="-mb-px flex space-x-8">
                 <button
                   onClick={() => setActiveTab('intro')}
-                  className={`flex-1 py-4 text-center font-medium transition ${
+                  className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'intro'
-                      ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  📖 강습 소개
+                  <span className="material-symbols-outlined text-lg">description</span>
+                  강습 소개
                 </button>
                 <button
                   onClick={() => setActiveTab('curriculum')}
-                  className={`flex-1 py-4 text-center font-medium transition ${
+                  className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-colors ${
                     activeTab === 'curriculum'
-                      ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  📋 커리큘럼
+                  <span className="material-symbols-outlined text-lg">school</span>
+                  커리큘럼
                 </button>
-              </div>
-
-              {/* 탭 콘텐츠 */}
-              <div className="p-6">
-                {activeTab === 'intro' && (
-                  <div>
-                    {content?.introduction ? (
-                      <div className="prose prose-gray max-w-none">
-                        <p className="text-gray-700 leading-relaxed whitespace-pre-line text-lg">
-                          {content.introduction}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 text-gray-400">
-                        <div className="text-4xl mb-3">📝</div>
-                        <p>아직 소개가 작성되지 않았습니다.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {activeTab === 'curriculum' && (
-                  <div>
-                    {content?.curriculum?.weeks && content.curriculum.weeks.length > 0 ? (
-                      <div className="space-y-4">
-                        {content.curriculum.weeks.map((week, index) => (
-                          <div
-                            key={week.week}
-                            className="bg-gray-50 rounded-xl p-5 hover:bg-gray-100 transition"
-                          >
-                            <div className="flex items-start gap-4">
-                              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-bold shrink-0">
-                                {week.week}
-                              </div>
-                              <div className="flex-1">
-                                <h3 className="font-bold text-gray-900 text-lg mb-2">
-                                  {week.title}
-                                </h3>
-                                {week.topics && week.topics.length > 0 && (
-                                  <ul className="space-y-2">
-                                    {week.topics.map((topic, i) => (
-                                      <li key={i} className="flex items-start gap-2 text-gray-600">
-                                        <span className="text-blue-500 mt-1">✓</span>
-                                        <span>{topic}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 text-gray-400">
-                        <div className="text-4xl mb-3">📚</div>
-                        <p>아직 커리큘럼이 작성되지 않았습니다.</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              </nav>
             </div>
 
-            {/* 강습 정보 요약 */}
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h2 className="font-bold text-gray-900 mb-4">강습 정보</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-gray-50 rounded-xl">
-                  <div className="text-2xl mb-1">{sportIcon}</div>
-                  <div className="text-sm text-gray-500">종목</div>
-                  <div className="font-medium">{SPORT_LABELS[lesson.sport_type]}</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-xl">
-                  <div className="text-2xl mb-1">📊</div>
-                  <div className="text-sm text-gray-500">난이도</div>
-                  <div className="font-medium">{DIFFICULTY_LABELS[lesson.difficulty]}</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-xl">
-                  <div className="text-2xl mb-1">👥</div>
-                  <div className="text-sm text-gray-500">대상</div>
-                  <div className="font-medium">{TARGET_LABELS[lesson.target_audience]}</div>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-xl">
-                  <div className="text-2xl mb-1">📅</div>
-                  <div className="text-sm text-gray-500">기간</div>
-                  <div className="font-medium">
-                    {content?.curriculum?.weeks?.length || 0}주
+            {/* Tab Content */}
+            {activeTab === 'intro' && (
+              <div className="prose prose-lg max-w-none text-slate-600">
+                {content?.introduction ? (
+                  <>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-4">강습 소개</h3>
+                    <p className="leading-relaxed whitespace-pre-line">{content.introduction}</p>
+                  </>
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <span className="material-symbols-outlined text-5xl mb-3">edit_note</span>
+                    <p>아직 소개가 작성되지 않았습니다.</p>
                   </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'curriculum' && (
+              <div>
+                <h3 className="text-2xl font-bold text-slate-900 mb-6">커리큘럼</h3>
+                {content?.curriculum?.weeks && content.curriculum.weeks.length > 0 ? (
+                  <div className="space-y-4">
+                    {content.curriculum.weeks.map((week) => (
+                      <div
+                        key={week.week}
+                        className="bg-white border border-slate-200 rounded-xl overflow-hidden"
+                      >
+                        <div className="p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-center h-10 w-10 rounded-full bg-primary/10 text-primary font-bold">
+                              {week.week}
+                            </div>
+                            <div>
+                              <h4 className="font-bold text-slate-900">{week.title}</h4>
+                              <p className="text-sm text-slate-500">{week.topics?.length || 0}개 주제</p>
+                            </div>
+                          </div>
+                          <span className="material-symbols-outlined text-slate-400">expand_more</span>
+                        </div>
+                        {week.topics && week.topics.length > 0 && (
+                          <div className="px-5 pb-5 pl-[4.5rem]">
+                            <div className="space-y-3">
+                              {week.topics.map((topic, i) => (
+                                <div key={i} className="flex items-center gap-3 text-sm text-slate-600">
+                                  <span className="material-symbols-outlined text-primary text-base">check_circle</span>
+                                  <span>{topic}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-slate-400">
+                    <span className="material-symbols-outlined text-5xl mb-3">menu_book</span>
+                    <p>아직 커리큘럼이 작성되지 않았습니다.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Lesson Summary Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6">
+              <h3 className="text-lg font-bold text-slate-900 mb-6">강습 정보</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div className="flex flex-col items-center text-center gap-2">
+                  <div className="text-primary bg-primary/10 w-10 h-10 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined">{sportIcon}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">종목</p>
+                  <p className="font-medium text-slate-900">{SPORT_LABELS[lesson.sport_type]}</p>
+                </div>
+                <div className="flex flex-col items-center text-center gap-2">
+                  <div className="text-orange-500 bg-orange-500/10 w-10 h-10 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined">signal_cellular_alt</span>
+                  </div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">난이도</p>
+                  <p className="font-medium text-slate-900">{DIFFICULTY_LABELS[lesson.difficulty]}</p>
+                </div>
+                <div className="flex flex-col items-center text-center gap-2">
+                  <div className="text-purple-500 bg-purple-500/10 w-10 h-10 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined">groups</span>
+                  </div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">대상</p>
+                  <p className="font-medium text-slate-900">{TARGET_LABELS[lesson.target_audience]}</p>
+                </div>
+                <div className="flex flex-col items-center text-center gap-2">
+                  <div className="text-blue-500 bg-blue-500/10 w-10 h-10 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined">calendar_today</span>
+                  </div>
+                  <p className="text-xs text-slate-500 uppercase font-semibold">기간</p>
+                  <p className="font-medium text-slate-900">{content?.curriculum?.weeks?.length || 0}주</p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 오른쪽: 수강 신청 카드 (Sticky) */}
-          <div className="hidden lg:block">
-            <div className="sticky top-24">
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                {/* 카드 헤더 */}
-                <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
-                  <div className="text-sm opacity-80 mb-1">강습 신청</div>
-                  <div className="text-2xl font-bold">{lesson.title}</div>
+          {/* Right Column: Sticky Enrollment (4 Cols) */}
+          <div className="lg:col-span-4 relative hidden lg:block">
+            <div className="sticky top-28 space-y-6">
+              {/* Enrollment Card */}
+              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xl">
+                {/* Gradient Header */}
+                <div className="bg-gradient-to-r from-primary to-purple-600 p-6 text-white relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"20\" height=\"20\" viewBox=\"0 0 20 20\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"%23ffffff\" fill-opacity=\"0.4\" fill-rule=\"evenodd\"%3E%3Ccircle cx=\"3\" cy=\"3\" r=\"1\"/%3E%3C/g%3E%3C/svg%3E')" }}></div>
+                  <h3 className="text-lg font-bold relative z-10">강습 신청</h3>
+                  <p className="text-sm text-blue-100 relative z-10">{lesson.title}</p>
                 </div>
 
-                {/* 카드 바디 */}
                 <div className="p-6">
-                  {/* 찜하기 */}
-                  <button
-                    onClick={handleToggleLike}
-                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium mb-4 transition ${
-                      liked
-                        ? 'bg-red-50 text-red-600 border-2 border-red-200'
-                        : 'bg-gray-50 text-gray-600 border-2 border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    {liked ? '❤️ 찜했어요!' : '🤍 찜하기'}
-                  </button>
-
-                  {/* 수강 신청 */}
+                  {/* Action Buttons */}
                   {!showEnrollForm ? (
-                    <button
-                      onClick={() => setShowEnrollForm(true)}
-                      className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-xl font-bold text-lg hover:opacity-90 transition shadow-lg"
-                    >
-                      수강 신청하기
-                    </button>
+                    <div className="space-y-3">
+                      {/* 찜하기 버튼 */}
+                      <button
+                        onClick={handleToggleLike}
+                        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium transition ${
+                          liked
+                            ? 'bg-red-50 text-red-600 border-2 border-red-200'
+                            : 'bg-slate-50 text-slate-600 border-2 border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {liked ? '❤️ 찜했어요!' : '🤍 찜하기'}
+                      </button>
+                      {/* 수강 신청 버튼 */}
+                      <button
+                        onClick={() => setShowEnrollForm(true)}
+                        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-xl font-bold text-lg hover:opacity-90 transition shadow-lg"
+                      >
+                        수강 신청하기
+                      </button>
+                    </div>
                   ) : (
                     <div className="space-y-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          수강생 이름
-                        </label>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">수강생 이름</label>
                         <input
                           type="text"
                           value={studentName}
                           onChange={(e) => setStudentName(e.target.value)}
                           placeholder="이름을 입력하세요"
-                          className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                          className="w-full rounded-lg border-slate-300 bg-slate-50 focus:ring-primary focus:border-primary"
                         />
                       </div>
                       <button
                         onClick={handleEnroll}
                         disabled={enrolling}
-                        className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition"
+                        className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-3 rounded-xl transition disabled:opacity-50"
                       >
                         {enrolling ? '신청 중...' : '신청 완료하기'}
                       </button>
@@ -415,36 +443,64 @@ export default function LessonDetailPage() {
                           setShowEnrollForm(false);
                           setStudentName('');
                         }}
-                        className="w-full text-gray-500 hover:text-gray-700 text-sm"
+                        className="w-full text-slate-500 hover:text-slate-700 text-sm"
                       >
                         취소
                       </button>
                     </div>
                   )}
 
-                  {/* 안내 */}
-                  <div className="mt-6 pt-6 border-t space-y-3 text-sm text-gray-500">
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                  <div className="my-6 h-px bg-slate-200"></div>
+
+                  {/* Benefits */}
+                  <ul className="space-y-3">
+                    <li className="flex items-start gap-3 text-sm text-slate-600">
+                      <span className="material-symbols-outlined text-green-500 text-lg shrink-0">check</span>
                       <span>수강 신청 후 바로 시작 가능</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
-                      <span>전문 강사의 1:1 피드백</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-green-500">✓</span>
+                    </li>
+                    <li className="flex items-start gap-3 text-sm text-slate-600">
+                      <span className="material-symbols-outlined text-green-500 text-lg shrink-0">check</span>
+                      <span><strong>전문 강사</strong>의 1:1 피드백</span>
+                    </li>
+                    <li className="flex items-start gap-3 text-sm text-slate-600">
+                      <span className="material-symbols-outlined text-green-500 text-lg shrink-0">check</span>
                       <span>AI 기반 맞춤형 학습 추천</span>
-                    </div>
+                    </li>
+                    <li className="flex items-start gap-3 text-sm text-slate-600">
+                      <span className="material-symbols-outlined text-green-500 text-lg shrink-0">check</span>
+                      <span>수료증 발급</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="bg-slate-50 px-6 py-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+                  <div className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm">verified_user</span>
+                    안심 수강 보장
                   </div>
+                  <div>안전한 결제</div>
                 </div>
               </div>
+
+              {/* AI Help Card */}
+              <Link
+                to="/chat"
+                className="bg-gradient-to-br from-navy to-slate-800 border border-slate-700 rounded-2xl p-5 flex items-center gap-4 hover:border-slate-600 transition-colors"
+              >
+                <div className="h-10 w-10 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined">smart_toy</span>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">도움이 필요하신가요?</p>
+                  <p className="text-xs text-slate-400">AI 상담으로 맞춤 추천을 받아보세요.</p>
+                </div>
+              </Link>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 모바일 하단 고정 바 */}
+      {/* Mobile Enrollment Modal */}
       {showEnrollForm && (
         <div className="lg:hidden fixed inset-0 bg-black/50 z-50 flex items-end">
           <div className="bg-white w-full rounded-t-3xl p-6 animate-slide-up">
@@ -455,14 +511,14 @@ export default function LessonDetailPage() {
                   setShowEnrollForm(false);
                   setStudentName('');
                 }}
-                className="text-gray-400 hover:text-gray-600 text-2xl"
+                className="text-slate-400 hover:text-slate-600"
               >
-                ×
+                <span className="material-symbols-outlined text-2xl">close</span>
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
                   수강생 이름
                 </label>
                 <input
@@ -470,13 +526,13 @@ export default function LessonDetailPage() {
                   value={studentName}
                   onChange={(e) => setStudentName(e.target.value)}
                   placeholder="이름을 입력하세요"
-                  className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-primary focus:border-transparent"
                 />
               </div>
               <button
                 onClick={handleEnroll}
                 disabled={enrolling}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-4 rounded-xl font-bold hover:opacity-90 disabled:opacity-50"
+                className="w-full bg-gradient-to-r from-primary to-purple-600 text-white py-4 rounded-xl font-bold hover:opacity-90 disabled:opacity-50"
               >
                 {enrolling ? '신청 중...' : '신청 완료하기'}
               </button>
