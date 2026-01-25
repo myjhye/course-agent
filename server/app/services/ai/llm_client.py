@@ -59,9 +59,8 @@ def generate_image(prompt: str) -> str:
             with open(filepath, "wb") as f:
                 f.write(image_data)
             
-            # 🔥 수정: 상대 경로가 아닌 전체 URL을 반환합니다.
-            base = settings.base_url.rstrip('/')
-            return f"{base}/static/thumbnails/{filename}"
+            # 🔥 수정: 상대 경로만 반환 (프론트엔드에서 API_URL을 붙임)
+            return f"/static/thumbnails/{filename}"
     
     # 이미지 생성 실패 시
     return None

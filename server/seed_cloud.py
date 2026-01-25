@@ -24,6 +24,7 @@ from app.models.instructor import Instructor
 from app.models.lesson import Lesson, SportType, TargetAudience, Difficulty, LessonStatus
 from app.models.lesson_content import LessonContent
 from app.models.faq import FAQ
+from app.services.ai.llm_client import generate_image
 from sqlalchemy import text
 
 
@@ -274,7 +275,7 @@ async def seed():
                 db.add(faq)
             print(f"   ✅ {len(FAQS)}개의 FAQ 추가 완료")
             
-            # 3. 강습 + 콘텐츠 추가
+            # 3. 강습 + 콘텐츠 추가 (썸네일 AI 생성 포함)
             print("\n📌 강습 데이터 삽입 중...")
             for lesson_data in LESSONS:
                 content_data = lesson_data.pop("content")
@@ -288,17 +289,25 @@ async def seed():
                 db.add(lesson)
                 await db.flush()  # lesson.id 생성
                 
-                # 콘텐츠 생성 (is_active=True)
+                # 🎨 썸네일 AI 생성
+                print(f"   🎨 '{lesson.title}' 썸네일 생성 중...")
+                try:
+                    generated_url = generate_image(f"{lesson.title} sports lesson thumbnail, professional, vibrant colors")
+                except Exception as e:
+                    print(f"      ⚠️ 썸네일 생성 실패: {e}")
+                    generated_url = None
+                
+                # 콘텐츠 생성 (생성된 URL 주입)
                 content = LessonContent(
                     lesson_id=lesson.id,
                     introduction=content_data["introduction"],
                     curriculum=content_data["curriculum"],
-                    thumbnail_url=None,  # 썸네일은 AI 생성 후 추가
+                    thumbnail_url=generated_url,  # AI 생성된 URL 사용
                     version=1,
                     is_active=True
                 )
                 db.add(content)
-                print(f"   ✅ '{lesson.title}' 추가")
+                print(f"   ✅ '{lesson.title}' 추가 완료")
             
             # 커밋
             await db.commit()
