@@ -36,7 +36,7 @@ async def generate_text(prompt: str) -> str:
 
 
 def generate_image(prompt: str) -> str:
-    """Gemini Imagen으로 이미지 생성 후 로컬 저장"""
+    """Gemini Imagen으로 이미지 생성 후 로컬 저장 및 전체 URL 반환"""
     
     # 이미지 생성 요청
     response = gemini_client.models.generate_content(
@@ -58,7 +58,10 @@ def generate_image(prompt: str) -> str:
             image_data = part.inline_data.data
             with open(filepath, "wb") as f:
                 f.write(image_data)
-            return f"/static/thumbnails/{filename}"
+            
+            # 🔥 수정: 상대 경로가 아닌 전체 URL을 반환합니다.
+            base = settings.base_url.rstrip('/')
+            return f"{base}/static/thumbnails/{filename}"
     
     # 이미지 생성 실패 시
     return None
