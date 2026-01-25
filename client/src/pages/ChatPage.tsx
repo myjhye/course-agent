@@ -1,38 +1,28 @@
 import { useEffect, useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { chatApi } from '../services/api';
 import type { ChatMessage } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
 
+// 하드코딩된 사용자 이름
+const STUDENT_NAME = '홍길동';
+
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>('');
-  const [studentName, setStudentName] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showNameInput, setShowNameInput] = useState(true);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 새 세션 ID 생성
     setSessionId(uuidv4());
   }, []);
 
   useEffect(() => {
-    // 메시지 추가 시 채팅 영역 내부만 스크롤
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
-
-  const handleStartChat = () => {
-    if (!studentName.trim()) {
-      alert('이름을 입력해주세요.');
-      return;
-    }
-    setShowNameInput(false);
-  };
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -41,7 +31,6 @@ export default function ChatPage() {
     setInput('');
     setLoading(true);
 
-    // 사용자 메시지 임시 추가
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
       session_id: sessionId,
@@ -54,9 +43,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
-      const res = await chatApi.sendMessage(sessionId, userMessage, studentName);
-      
-      // 실제 응답으로 교체
+      const res = await chatApi.sendMessage(sessionId, userMessage, STUDENT_NAME);
       setMessages((prev) => [
         ...prev.slice(0, -1),
         res.data.user_message,
@@ -64,7 +51,6 @@ export default function ChatPage() {
       ]);
     } catch (err) {
       console.error(err);
-      // 에러 메시지 추가
       const errorMsg: ChatMessage = {
         id: Date.now() + 1,
         session_id: sessionId,
@@ -87,167 +73,201 @@ export default function ChatPage() {
     }
   };
 
-  // 이름 입력 화면
-  if (showNameInput) {
-    return (
-      <div className="flex items-center justify-center p-4" style={{ minHeight: 'calc(100vh - 180px)' }}>
-        <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full">
-          <h1 className="text-2xl font-bold text-center mb-2">💬 AI 상담</h1>
-          <p className="text-gray-500 text-center mb-6">
-            강습 추천, 수강 현황, 이용 방법 등을 물어보세요!
-          </p>
-          
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              이름을 알려주세요
-            </label>
-            <input
-              type="text"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleStartChat()}
-              placeholder="홍길동"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          
-          <button
-            onClick={handleStartChat}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            대화 시작하기
-          </button>
-          
-          <Link
-            to="/lessons"
-            className="block text-center text-sm text-gray-500 mt-4 hover:text-blue-600"
-          >
-            강습 둘러보기 →
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const quickActions = [
+    { icon: 'pool', label: '수영 추천', query: '수영 강습 추천해줘' },
+    { icon: 'assignment_ind', label: '수강 현황', query: '내 수강 현황 알려줘' },
+    { icon: 'receipt_long', label: '환불 정책', query: '환불 어떻게 해요?' },
+  ];
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 180px)' }}>
-      {/* 채팅 헤더 */}
-      <div className="bg-white border-b">
-        <div className="max-w-3xl mx-auto px-4 py-3">
-          <h1 className="font-bold text-lg">💬 AI 상담</h1>
-          <p className="text-xs text-gray-500">{studentName}님</p>
+    <div className="flex flex-col bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
+      {/* Chat Header */}
+      <header className="flex flex-none items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md px-6 py-4 z-10">
+        <div className="flex items-center gap-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-purple-600 text-white shadow-md">
+            <span className="material-symbols-outlined">smart_toy</span>
+          </div>
+          <div>
+            <h2 className="text-slate-900 text-lg font-bold leading-tight">💬 AI 상담</h2>
+            <div className="flex items-center gap-1.5 pt-0.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="text-xs font-medium text-slate-500">Course Agent 온라인</span>
+            </div>
+          </div>
         </div>
-      </div>
-
-      {/* 메시지 영역 */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto bg-gray-50">
-        <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-          {/* 초기 안내 */}
-          {messages.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-4xl mb-4">🤖</div>
-              <p className="text-gray-600 mb-2">안녕하세요, {studentName}님!</p>
-              <p className="text-gray-500 text-sm">
-                강습 추천, 수강 현황, 환불/결제 등 궁금한 것을 물어보세요.
-              </p>
-              <div className="flex flex-wrap justify-center gap-2 mt-6">
-                {['수영 강습 있어요?', '내 수강 현황 알려줘', '환불 어떻게 해요?'].map((q) => (
-                  <button
-                    key={q}
-                    onClick={() => {
-                      setInput(q);
-                    }}
-                    className="text-sm bg-white border border-gray-200 rounded-full px-4 py-2 hover:bg-gray-50"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+            <div className="bg-slate-200 rounded-full h-8 w-8 flex items-center justify-center">
+              <span className="material-symbols-outlined text-slate-500 text-[18px]">person</span>
             </div>
-          )}
+            <span className="text-sm font-semibold text-slate-700 pr-1">{STUDENT_NAME}</span>
+          </div>
+        </div>
+      </header>
 
-          {/* 메시지 목록 */}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white shadow-sm border border-gray-100'
-                }`}
-              >
-                {msg.role === 'assistant' ? (
-                  <div className="prose prose-sm max-w-none">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+      {/* Chat Area */}
+      <main ref={messagesContainerRef} className="flex-1 overflow-y-auto bg-background-light p-6 sm:p-8 flex flex-col gap-6 chat-scroll">
+        {/* Initial Welcome State */}
+        {messages.length === 0 && (
+          <>
+            {/* Date Divider */}
+            <div className="flex justify-center">
+              <span className="text-xs font-medium text-slate-400 bg-slate-200/50 px-3 py-1 rounded-full">
+                오늘
+              </span>
+            </div>
+            
+            {/* AI Welcome Message */}
+            <div className="flex items-start gap-4 max-w-3xl">
+              <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
+                <span className="material-symbols-outlined text-primary text-[20px]">smart_toy</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-slate-500 ml-1">Course Agent</span>
+                  <div className="bg-white p-5 rounded-2xl rounded-tl-none shadow-sm text-slate-800 text-sm sm:text-base leading-relaxed border border-slate-100">
+                    <p>안녕하세요 <strong>{STUDENT_NAME}</strong>님! 👋</p>
+                    <p className="mt-2">저는 AI 코스 에이전트입니다. 스포츠 강습 추천, 수강 현황 확인, 시설 이용 안내 등을 도와드릴 수 있어요.</p>
+                    <p className="mt-2">오늘 어떤 도움이 필요하신가요?</p>
                   </div>
-                ) : (
-                  <p className="whitespace-pre-line">{msg.content}</p>
-                )}
+                </div>
                 
-                {/* 사용된 도구 표시 (멀티스텝인 경우 여러 개) */}
-                {msg.tool_used && (
-                  <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className="text-xs text-gray-400 flex items-center gap-1">
-                      🔧 {msg.tool_used.split(',').length > 1 ? (
-                        <span className="flex flex-wrap gap-1">
-                          {msg.tool_used.split(',').map((tool, idx) => (
-                            <span key={idx} className="bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded">
-                              {tool.trim()}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        msg.tool_used
-                      )}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* 로딩 */}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-white shadow-sm border border-gray-100 rounded-2xl px-4 py-3">
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+                {/* Quick Actions */}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {quickActions.map((action) => (
+                    <button
+                      key={action.label}
+                      onClick={() => setInput(action.query)}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-white border border-primary/20 rounded-full text-xs sm:text-sm font-medium text-primary hover:bg-primary/5 transition-colors shadow-sm"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">{action.icon}</span>
+                      {action.label}
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
-          )}
+          </>
+        )}
 
-        </div>
-      </div>
+        {/* Messages */}
+        {messages.map((msg) => (
+          <div key={msg.id}>
+            {msg.role === 'user' ? (
+              // User Message
+              <div className="flex items-end justify-end gap-3 w-full pl-12">
+                <div className="flex flex-col gap-1 items-end max-w-[80%]">
+                  <div className="bg-primary text-white p-4 rounded-2xl rounded-tr-none shadow-md text-sm sm:text-base leading-relaxed">
+                    <p className="whitespace-pre-line">{msg.content}</p>
+                  </div>
+                  <span className="text-xs text-slate-400 mr-1">
+                    {new Date(msg.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              // AI Message
+              <div className="flex items-start gap-4 max-w-3xl">
+                <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
+                  <span className="material-symbols-outlined text-primary text-[20px]">smart_toy</span>
+                </div>
+                <div className="flex flex-col gap-2 w-full">
+                  <span className="text-xs font-semibold text-slate-500 ml-1">Course Agent</span>
+                  <div className="bg-white p-5 rounded-2xl rounded-tl-none shadow-sm text-slate-800 text-sm sm:text-base leading-relaxed border border-slate-100">
+                    <div className="prose prose-sm max-w-none prose-slate">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </div>
+                    
+                    {/* Tool Badge */}
+                    {msg.tool_used && (
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                        {msg.tool_used.split(',').map((tool, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-1.5 px-2 py-1 bg-purple-50 rounded text-[10px] font-mono font-medium text-purple-600 border border-purple-100"
+                          >
+                            <span className="material-symbols-outlined text-[12px]">build</span>
+                            {tool.trim()}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
 
-      {/* 입력 영역 */}
-      <div className="bg-white border-t p-4">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex gap-2">
-            <input
-              type="text"
+        {/* Typing Indicator */}
+        {loading && (
+          <div className="flex items-start gap-4">
+            <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
+              <span className="material-symbols-outlined text-primary text-[20px] opacity-50">smart_toy</span>
+            </div>
+            <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex items-center gap-1 h-[46px]">
+              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Input Area */}
+      <div className="flex-none bg-white p-4 sm:p-6 border-t border-slate-100 z-10">
+        <div className="relative flex items-end gap-3 max-w-4xl mx-auto">
+          <div className="flex-1 relative">
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="메시지를 입력하세요..."
               disabled={loading}
-              className="flex-1 border border-gray-300 rounded-full px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+              rows={1}
+              className="w-full bg-background-light border-0 rounded-xl px-5 py-3.5 text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-primary/50 resize-none overflow-hidden min-h-[50px] max-h-[150px] disabled:bg-slate-100"
             />
-            <button
-              onClick={handleSend}
-              disabled={loading || !input.trim()}
-              className="bg-blue-600 text-white px-6 py-3 rounded-full font-medium hover:bg-blue-700 disabled:bg-gray-400 transition"
-            >
-              전송
-            </button>
           </div>
+          <button
+            onClick={handleSend}
+            disabled={loading || !input.trim()}
+            className="flex-none h-12 w-12 rounded-xl bg-primary text-white flex items-center justify-center hover:bg-blue-600 hover:shadow-lg hover:shadow-primary/30 transition-all active:scale-95 shadow-md disabled:bg-slate-300 disabled:shadow-none"
+          >
+            <span className="material-symbols-outlined">send</span>
+          </button>
+        </div>
+        <div className="text-center mt-3">
+          <p className="text-[10px] text-slate-400">AI는 실수할 수 있습니다. 중요한 정보는 확인해 주세요.</p>
         </div>
       </div>
+
+      {/* CSS for typing animation */}
+      <style>{`
+        .typing-dot {
+          animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes bounce {
+          0%, 80%, 100% { transform: scale(0); }
+          40% { transform: scale(1); }
+        }
+        
+        .chat-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .chat-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .chat-scroll::-webkit-scrollbar-thumb {
+          background-color: #cbd5e1;
+          border-radius: 20px;
+        }
+      `}</style>
     </div>
   );
 }
