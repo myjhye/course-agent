@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { adminLessonApi, instructorApi } from '../../services/api';
 import type { Instructor, LessonCreateRequest, SportType, TargetAudience, Difficulty } from '../../types';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
@@ -55,118 +55,169 @@ export default function LessonCreatePage() {
   };
 
   return (
-    <div className="max-w-2xl">
-      <h1 className="text-2xl font-bold mb-6">새 강습 등록</h1>
-
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-6 space-y-6">
-        {/* 강습명 */}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link
+          to="/admin/lessons"
+          className="p-2 -ml-2 rounded-full hover:bg-slate-200 transition-colors text-slate-600"
+        >
+          <span className="material-symbols-outlined">arrow_back</span>
+        </Link>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            강습명 *
-          </label>
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="예: 성인 수영 입문반"
-          />
+          <h1 className="text-2xl font-bold text-slate-900">새 강습 등록</h1>
+          <p className="text-sm text-slate-500">새로운 강습 정보를 입력하고 등록해주세요.</p>
         </div>
+      </div>
 
-        {/* 종목 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            종목 *
-          </label>
-          <select
-            value={form.sport_type}
-            onChange={(e) => setForm({ ...form, sport_type: e.target.value as SportType })}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          >
-            {SPORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Form Card */}
+      <div className="max-w-2xl">
+        <form
+          onSubmit={handleSubmit}
+          className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 flex flex-col gap-8"
+        >
+          {/* Section: Basic Info */}
+          <div className="flex flex-col gap-6">
+            {/* Title */}
+            <label className="flex flex-col gap-2">
+              <span className="text-slate-700 text-sm font-semibold">
+                강습명 <span className="text-red-500">*</span>
+              </span>
+              <input
+                type="text"
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="예: 성인 수영 입문반"
+                className="w-full h-12 px-4 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+              />
+            </label>
 
-        {/* 대상 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            대상 *
-          </label>
-          <select
-            value={form.target_audience}
-            onChange={(e) => setForm({ ...form, target_audience: e.target.value as TargetAudience })}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          >
-            {TARGET_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+            {/* Sport & Target */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <label className="flex flex-col gap-2">
+                <span className="text-slate-700 text-sm font-semibold">
+                  종목 <span className="text-red-500">*</span>
+                </span>
+                <div className="relative">
+                  <select
+                    value={form.sport_type}
+                    onChange={(e) => setForm({ ...form, sport_type: e.target.value as SportType })}
+                    className="w-full h-12 px-4 pr-10 rounded-lg border border-slate-300 bg-white text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  >
+                    {SPORT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-500">
+                    <span className="material-symbols-outlined">expand_more</span>
+                  </div>
+                </div>
+              </label>
 
-        {/* 난이도 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            난이도 *
-          </label>
-          <select
-            value={form.difficulty}
-            onChange={(e) => setForm({ ...form, difficulty: e.target.value as Difficulty })}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          >
-            {DIFFICULTY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+              <label className="flex flex-col gap-2">
+                <span className="text-slate-700 text-sm font-semibold">
+                  대상 <span className="text-red-500">*</span>
+                </span>
+                <div className="relative">
+                  <select
+                    value={form.target_audience}
+                    onChange={(e) => setForm({ ...form, target_audience: e.target.value as TargetAudience })}
+                    className="w-full h-12 px-4 pr-10 rounded-lg border border-slate-300 bg-white text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  >
+                    {TARGET_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-500">
+                    <span className="material-symbols-outlined">expand_more</span>
+                  </div>
+                </div>
+              </label>
+            </div>
 
-        {/* 강사 */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            강사
-          </label>
-          <select
-            value={form.instructor_id || ''}
-            onChange={(e) =>
-              setForm({ ...form, instructor_id: e.target.value ? Number(e.target.value) : undefined })
-            }
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          >
-            <option value="">선택 안 함</option>
-            {instructors.map((inst) => (
-              <option key={inst.id} value={inst.id}>
-                {inst.name} ({inst.specialty})
-              </option>
-            ))}
-          </select>
-        </div>
+            {/* Difficulty & Instructor */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <label className="flex flex-col gap-2">
+                <span className="text-slate-700 text-sm font-semibold">난이도</span>
+                <div className="relative">
+                  <select
+                    value={form.difficulty}
+                    onChange={(e) => setForm({ ...form, difficulty: e.target.value as Difficulty })}
+                    className="w-full h-12 px-4 pr-10 rounded-lg border border-slate-300 bg-white text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  >
+                    {DIFFICULTY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-500">
+                    <span className="material-symbols-outlined">expand_more</span>
+                  </div>
+                </div>
+              </label>
 
-        {/* 버튼 */}
-        <div className="flex gap-4">
-          <button
-            type="submit"
-            disabled={loading}
-            className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            {loading ? '등록 중...' : '강습 등록'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/admin/lessons')}
-            className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            취소
-          </button>
-        </div>
-      </form>
+              <label className="flex flex-col gap-2">
+                <span className="text-slate-700 text-sm font-semibold">강사 배정</span>
+                <div className="relative">
+                  <select
+                    value={form.instructor_id || ''}
+                    onChange={(e) =>
+                      setForm({ ...form, instructor_id: e.target.value ? Number(e.target.value) : undefined })
+                    }
+                    className="w-full h-12 px-4 pr-10 rounded-lg border border-slate-300 bg-white text-slate-900 appearance-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  >
+                    <option value="">강사를 선택하세요</option>
+                    {instructors.map((inst) => (
+                      <option key={inst.id} value={inst.id}>
+                        {inst.name} ({inst.specialty})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-500">
+                    <span className="material-symbols-outlined">person</span>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="h-px bg-slate-100 w-full" />
+
+          {/* Action Buttons */}
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => navigate('/admin/lessons')}
+              className="flex-1 h-12 px-6 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium transition-all"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-[2] h-12 px-6 rounded-lg bg-primary hover:bg-blue-600 text-white shadow-lg shadow-blue-500/30 font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <span className="material-symbols-outlined text-[20px] animate-spin">autorenew</span>
+                  등록 중...
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">check</span>
+                  강습 등록
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
-
