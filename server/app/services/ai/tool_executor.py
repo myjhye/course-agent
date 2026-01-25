@@ -18,9 +18,10 @@ class ToolExecutor:
         
         if tool_name == "search_lessons":
             return await self._search_lessons(
-                arguments.get("keyword"),
-                arguments.get("sport_type"),
-                arguments.get("difficulty")
+                keyword=arguments.get("keyword"),
+                sport_type=arguments.get("sport_type"),
+                difficulty=arguments.get("difficulty"),
+                target_audience=arguments.get("target_audience")
             )
         
         elif tool_name == "get_lesson_detail":
@@ -41,7 +42,8 @@ class ToolExecutor:
         self,
         keyword: str = None,
         sport_type: str = None,
-        difficulty: str = None
+        difficulty: str = None,
+        target_audience: str = None
     ) -> dict:
         """강습 검색"""
         
@@ -65,12 +67,24 @@ class ToolExecutor:
         if difficulty:
             query = query.where(Lesson.difficulty == difficulty)
         
+        if target_audience:
+            query = query.where(Lesson.target_audience == target_audience)
+        
         query = query.limit(5)
         result = await self.db.execute(query)
         lessons = list(result.scalars().all())
         
         if not lessons:
-            return {"success": False, "data": [], "keyword": keyword or ""}
+            return {
+                "success": False, 
+                "data": [], 
+                "filters": {
+                    "sport_type": sport_type,
+                    "difficulty": difficulty,
+                    "target_audience": target_audience,
+                    "keyword": keyword
+                }
+            }
         
         return {
             "success": True,
@@ -85,7 +99,12 @@ class ToolExecutor:
                 }
                 for l in lessons
             ],
-            "keyword": keyword or ""
+            "filters": {
+                "sport_type": sport_type,
+                "difficulty": difficulty,
+                "target_audience": target_audience,
+                "keyword": keyword
+            }
         }
     
     async def _get_lesson_detail(self, lesson_id: int) -> dict:

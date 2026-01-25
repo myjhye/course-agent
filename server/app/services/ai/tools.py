@@ -3,23 +3,35 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_lessons",
-            "description": "강습을 검색합니다. 사용자가 강습을 찾거나 특정 조건의 강습을 물어볼 때 사용합니다. 검색 후 상세 정보가 필요하면 get_lesson_detail을 추가로 호출하세요.",
+            "description": """강습을 검색합니다.
+
+**반드시 이 도구를 사용해야 하는 경우:**
+- 특정 종목 강습 요청: "수영 강습 알려줘", "테니스 배우고 싶어", "골프 추천해줘"
+- 특정 조건 검색: "초급 요가", "성인 필라테스", "피트니스 강습"
+- "OO 강습 추천해줘"처럼 종목이 명시된 경우
+
+**주의:** "수영 추천", "테니스 강습 추천" 등 특정 종목이 언급되면 get_recommendations가 아닌 이 도구를 사용!""",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "keyword": {
-                        "type": "string",
-                        "description": "검색 키워드 (예: 수영, 테니스, 입문)"
-                    },
                     "sport_type": {
                         "type": "string",
-                        "description": "종목 필터",
+                        "description": "종목 (swimming=수영, tennis=테니스, golf=골프, yoga=요가, pilates=필라테스, fitness=피트니스)",
                         "enum": ["swimming", "tennis", "golf", "fitness", "yoga", "pilates"]
                     },
                     "difficulty": {
                         "type": "string",
-                        "description": "난이도 필터",
+                        "description": "난이도 (beginner=입문, elementary=초급, intermediate=중급, advanced=고급)",
                         "enum": ["beginner", "elementary", "intermediate", "advanced"]
+                    },
+                    "target_audience": {
+                        "type": "string",
+                        "description": "대상 (adult=성인, child=어린이, senior=시니어)",
+                        "enum": ["adult", "child", "senior"]
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "추가 검색 키워드 (선택)"
                     }
                 },
                 "required": []
@@ -47,7 +59,7 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_enrollments",
-            "description": "수강생의 수강 현황(수강 중인 강습, 완료한 강습, 출석률)을 조회합니다. 추천이 필요하면 이후 get_recommendations를 호출하세요.",
+            "description": "수강생의 수강 현황(수강 중인 강습, 완료한 강습, 출석률)을 조회합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,7 +76,13 @@ CHAT_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_recommendations",
-            "description": "수강생의 수강 이력을 바탕으로 다음에 들을 강습을 추천합니다. 수강 현황과 함께 보여주려면 get_my_enrollments를 먼저 호출하세요.",
+            "description": """수강생의 수강 이력 기반 맞춤 추천을 제공합니다.
+
+**이 도구를 사용해야 하는 경우:**
+- 특정 종목 없이 일반적인 추천: "추천해줘", "뭐 들을까", "다음 강습 뭐 들어"
+- 개인화 추천: "나한테 맞는 강습", "나한테 추천해줘"
+
+**주의:** "수영 추천", "테니스 강습 추천"처럼 특정 종목이 언급되면 이 도구 대신 search_lessons 사용!""",
             "parameters": {
                 "type": "object",
                 "properties": {
