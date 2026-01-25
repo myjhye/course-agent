@@ -1,29 +1,29 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Difficulty, Lesson, SportType, TargetAudience } from '../types';
+import { Lesson } from '../types';
 import { lessonApi } from '../services/api';
 import Pagination from '../components/common/Pagination';
 import { DIFFICULTY_LABELS, SPORT_LABELS, TARGET_LABELS } from '../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-// 종목별 아이콘 & 색상
-const SPORT_CONFIG: Record<string, { icon: string; color: string }> = {
-  swimming: { icon: '🏊', color: 'from-blue-400 to-cyan-400' },
-  tennis: { icon: '🎾', color: 'from-green-400 to-emerald-400' },
-  golf: { icon: '⛳', color: 'from-emerald-400 to-teal-400' },
-  yoga: { icon: '🧘', color: 'from-purple-400 to-pink-400' },
-  pilates: { icon: '🤸', color: 'from-pink-400 to-rose-400' },
-  fitness: { icon: '💪', color: 'from-orange-400 to-red-400' },
-  other: { icon: '🏃', color: 'from-gray-400 to-gray-500' },
+// Material Symbols 아이콘 매핑
+const SPORT_ICONS: Record<string, string> = {
+  swimming: 'pool',
+  tennis: 'sports_tennis',
+  golf: 'sports_golf',
+  yoga: 'self_improvement',
+  pilates: 'accessibility_new',
+  fitness: 'fitness_center',
+  other: 'sports',
 };
 
-// 난이도별 색상
-const DIFFICULTY_COLORS: Record<string, string> = {
-  beginner: 'bg-green-100 text-green-700',
-  elementary: 'bg-blue-100 text-blue-700',
-  intermediate: 'bg-yellow-100 text-yellow-700',
-  advanced: 'bg-red-100 text-red-700',
+// 난이도별 스타일
+const DIFFICULTY_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  beginner: { bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30' },
+  elementary: { bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30' },
+  intermediate: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', border: 'border-yellow-500/30' },
+  advanced: { bg: 'bg-orange-500/20', text: 'text-orange-400', border: 'border-orange-500/30' },
 };
 
 export default function LessonsPage() {
@@ -35,7 +35,6 @@ export default function LessonsPage() {
   const [total, setTotal] = useState(0);
   const [showMobileFilter, setShowMobileFilter] = useState(false);
   
-  // URL 쿼리 파라미터로부터 초기 필터 설정
   const [filters, setFilters] = useState<{
     sport_type?: string;
     target_audience?: string;
@@ -157,94 +156,106 @@ export default function LessonsPage() {
   const filterCount = Object.keys(filters).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* 페이지 헤더 */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <h1 className="text-2xl font-bold text-gray-900">강습 둘러보기</h1>
-          <p className="text-gray-500 mt-1">
-            {total > 0 ? `총 ${total}개의 강습` : '강습을 찾아보세요'}
-          </p>
+    <div className="min-h-screen bg-background-light">
+      {/* Page Header */}
+      <div className="bg-navy border-b border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          {/* Breadcrumbs */}
+          <nav className="flex items-center gap-2 mb-4 text-sm">
+            <Link to="/" className="text-slate-400 hover:text-primary transition-colors font-medium">홈</Link>
+            <span className="material-symbols-outlined text-slate-600 text-base">chevron_right</span>
+            <span className="text-white font-medium">강습 둘러보기</span>
+          </nav>
+          
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div>
+              <h1 className="text-3xl lg:text-4xl font-bold text-white tracking-tight mb-2">강습 둘러보기</h1>
+              <p className="text-slate-400">다양한 종목의 스포츠 강습을 둘러보세요.</p>
+            </div>
+            {total > 0 && (
+              <div className="text-primary font-semibold bg-primary/10 px-4 py-2 rounded-lg border border-primary/20">
+                {total}개 강습
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex gap-8">
-          {/* 왼쪽 사이드바 필터 (데스크탑) */}
-          <aside className="hidden lg:block w-64 flex-shrink-0">
-            <div className="sticky top-24">
-              <FilterSidebar
-                filters={filters}
-                onFilterChange={handleFilterChange}
-                onClearFilters={clearFilters}
-                hasFilters={hasFilters}
-                searchInput={searchInput}
-                setSearchInput={setSearchInput}
-                onSearch={handleSearch}
-              />
-            </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex flex-col lg:flex-row gap-8">
+          {/* Sidebar Filters (Desktop) */}
+          <aside className="hidden lg:block w-72 flex-shrink-0 space-y-8">
+            <FilterSidebar
+              filters={filters}
+              onFilterChange={handleFilterChange}
+              onClearFilters={clearFilters}
+              hasFilters={hasFilters}
+              searchInput={searchInput}
+              setSearchInput={setSearchInput}
+              onSearch={handleSearch}
+            />
           </aside>
 
-          {/* 메인 콘텐츠 */}
+          {/* Main Content */}
           <main className="flex-1 min-w-0">
-            {/* 모바일 필터 버튼 */}
+            {/* Mobile Filter Button */}
             <div className="lg:hidden mb-4">
               <button
                 onClick={() => setShowMobileFilter(true)}
-                className="w-full flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-3 text-gray-700 hover:bg-gray-50 transition"
+                className="w-full flex items-center justify-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-700 hover:bg-slate-50 transition"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
+                <span className="material-symbols-outlined">tune</span>
                 <span>필터</span>
                 {filterCount > 0 && (
-                  <span className="bg-blue-600 text-white text-xs px-2 py-0.5 rounded-full">
+                  <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full">
                     {filterCount}
                   </span>
                 )}
               </button>
             </div>
 
-            {/* 활성 필터 태그 */}
+            {/* Active Filters & Sort */}
             {hasFilters && (
-              <div className="flex flex-wrap items-center gap-2 mb-4">
-                <span className="text-sm text-gray-500">적용된 필터:</span>
-                {filters.search && (
-                  <FilterTag
-                    label={`🔍 "${filters.search}"`}
-                    onRemove={clearSearch}
-                  />
-                )}
-                {filters.sport_type && (
-                  <FilterTag
-                    label={`${SPORT_CONFIG[filters.sport_type]?.icon || ''} ${SPORT_LABELS[filters.sport_type]}`}
-                    onRemove={() => handleFilterChange('sport_type', '')}
-                  />
-                )}
-                {filters.target_audience && (
-                  <FilterTag
-                    label={TARGET_LABELS[filters.target_audience]}
-                    onRemove={() => handleFilterChange('target_audience', '')}
-                  />
-                )}
-                {filters.difficulty && (
-                  <FilterTag
-                    label={DIFFICULTY_LABELS[filters.difficulty]}
-                    onRemove={() => handleFilterChange('difficulty', '')}
-                  />
-                )}
-                <button
-                  onClick={clearFilters}
-                  className="text-sm text-gray-500 hover:text-red-500 ml-2"
-                >
-                  전체 해제
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  {filters.search && (
+                    <FilterTag
+                      label={`"${filters.search}"`}
+                      isPrimary
+                      onRemove={clearSearch}
+                    />
+                  )}
+                  {filters.sport_type && (
+                    <FilterTag
+                      label={SPORT_LABELS[filters.sport_type]}
+                      onRemove={() => handleFilterChange('sport_type', '')}
+                    />
+                  )}
+                  {filters.target_audience && (
+                    <FilterTag
+                      label={TARGET_LABELS[filters.target_audience]}
+                      onRemove={() => handleFilterChange('target_audience', '')}
+                    />
+                  )}
+                  {filters.difficulty && (
+                    <FilterTag
+                      label={DIFFICULTY_LABELS[filters.difficulty]}
+                      onRemove={() => handleFilterChange('difficulty', '')}
+                    />
+                  )}
+                  <button
+                    onClick={clearFilters}
+                    className="text-sm text-slate-500 hover:text-primary underline ml-2"
+                  >
+                    전체 해제
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* 결과 */}
+            {/* Results */}
             {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[...Array(6)].map((_, i) => (
                   <SkeletonCard key={i} />
                 ))}
@@ -253,14 +264,14 @@ export default function LessonsPage() {
               <EmptyState hasFilters={hasFilters} onClearFilters={clearFilters} />
             ) : (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {lessons.map((lesson) => (
                     <LessonCard key={lesson.id} lesson={lesson} />
                   ))}
                 </div>
 
                 {totalPages > 1 && (
-                  <div className="mt-10">
+                  <div className="mt-12">
                     <Pagination
                       page={page}
                       totalPages={totalPages}
@@ -274,19 +285,17 @@ export default function LessonsPage() {
         </div>
       </div>
 
-      {/* 모바일 필터 모달 */}
+      {/* Mobile Filter Modal */}
       {showMobileFilter && (
         <div className="fixed inset-0 bg-black/50 z-50 lg:hidden">
-          <div className="absolute right-0 top-0 bottom-0 w-80 max-w-full bg-white shadow-xl overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
-              <h2 className="font-bold text-lg">필터</h2>
+          <div className="absolute right-0 top-0 bottom-0 w-80 max-w-full bg-navy shadow-xl overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 sticky top-0 bg-navy">
+              <h2 className="font-bold text-lg text-white">필터</h2>
               <button
                 onClick={() => setShowMobileFilter(false)}
-                className="p-2 hover:bg-gray-100 rounded-lg"
+                className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <span className="material-symbols-outlined">close</span>
               </button>
             </div>
             <div className="p-4">
@@ -297,12 +306,15 @@ export default function LessonsPage() {
                 }}
                 onClearFilters={clearFilters}
                 hasFilters={hasFilters}
+                searchInput={searchInput}
+                setSearchInput={setSearchInput}
+                onSearch={handleSearch}
               />
             </div>
-            <div className="p-4 border-t sticky bottom-0 bg-white">
+            <div className="p-4 border-t border-slate-800 sticky bottom-0 bg-navy">
               <button
                 onClick={() => setShowMobileFilter(false)}
-                className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition"
+                className="w-full bg-primary text-white py-3 rounded-xl font-medium hover:bg-blue-600 transition"
               >
                 {total}개 강습 보기
               </button>
@@ -314,7 +326,7 @@ export default function LessonsPage() {
   );
 }
 
-// 필터 사이드바
+// Filter Sidebar
 function FilterSidebar({
   filters,
   onFilterChange,
@@ -328,175 +340,105 @@ function FilterSidebar({
   onFilterChange: (key: 'sport_type' | 'target_audience' | 'difficulty', value: string) => void;
   onClearFilters: () => void;
   hasFilters: boolean;
-  searchInput: string;
-  setSearchInput: (value: string) => void;
-  onSearch: (e: React.FormEvent) => void;
+  searchInput?: string;
+  setSearchInput?: (value: string) => void;
+  onSearch?: (e: React.FormEvent) => void;
 }) {
   return (
-    <div className="space-y-6">
-      {/* 검색 */}
-      <form onSubmit={onSearch}>
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="강습 검색..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm bg-white"
-          />
-          <button
-            type="submit"
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
+    <div className="space-y-8">
+      {/* Search */}
+      {onSearch && setSearchInput && (
+        <form onSubmit={onSearch}>
+          <div className="bg-white border border-slate-200 p-1 rounded-xl">
+            <div className="relative flex items-center h-12">
+              <span className="material-symbols-outlined absolute left-4 text-slate-400">search</span>
+              <input
+                type="text"
+                placeholder="강습 검색..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                className="w-full h-full bg-transparent border-none focus:ring-0 text-slate-900 pl-12 pr-4 placeholder-slate-400 rounded-lg"
+              />
+            </div>
+          </div>
+        </form>
+      )}
+
+      {/* Sport Type Filter */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-slate-900 font-bold text-lg">종목</h3>
         </div>
-      </form>
-
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <h3 className="font-bold text-gray-900">필터</h3>
-        {hasFilters && (
-          <button
-            onClick={onClearFilters}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            초기화
-          </button>
-        )}
-      </div>
-
-      {/* 종목 필터 */}
-      <div>
-        <h4 className="font-medium text-gray-900 mb-3">종목</h4>
         <div className="space-y-2">
-          <FilterOption
-            selected={!filters.sport_type}
-            onClick={() => onFilterChange('sport_type', '')}
+          <FilterCheckbox
+            checked={!filters.sport_type}
+            onChange={() => onFilterChange('sport_type', '')}
             label="전체"
           />
           {Object.entries(SPORT_LABELS).map(([value, label]) => (
-            <FilterOption
+            <FilterCheckbox
               key={value}
-              selected={filters.sport_type === value}
-              onClick={() => onFilterChange('sport_type', value)}
-              label={`${SPORT_CONFIG[value]?.icon || ''} ${label}`}
+              checked={filters.sport_type === value}
+              onChange={() => onFilterChange('sport_type', filters.sport_type === value ? '' : value)}
+              label={label}
+              icon={SPORT_ICONS[value]}
             />
           ))}
         </div>
       </div>
 
-      {/* 대상 필터 */}
-      <div>
-        <h4 className="font-medium text-gray-900 mb-3">대상</h4>
+      <div className="h-px w-full bg-slate-200"></div>
+
+      {/* Target Audience Filter */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-slate-900 font-bold text-lg">대상</h3>
+        </div>
         <div className="space-y-2">
-          <FilterOption
-            selected={!filters.target_audience}
-            onClick={() => onFilterChange('target_audience', '')}
+          <FilterCheckbox
+            checked={!filters.target_audience}
+            onChange={() => onFilterChange('target_audience', '')}
             label="전체"
           />
           {Object.entries(TARGET_LABELS).map(([value, label]) => (
-            <FilterOption
+            <FilterCheckbox
               key={value}
-              selected={filters.target_audience === value}
-              onClick={() => onFilterChange('target_audience', value)}
+              checked={filters.target_audience === value}
+              onChange={() => onFilterChange('target_audience', filters.target_audience === value ? '' : value)}
               label={label}
             />
           ))}
         </div>
       </div>
 
-      {/* 난이도 필터 */}
-      <div>
-        <h4 className="font-medium text-gray-900 mb-3">난이도</h4>
+      <div className="h-px w-full bg-slate-200"></div>
+
+      {/* Difficulty Filter */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-slate-900 font-bold text-lg">난이도</h3>
+        </div>
         <div className="space-y-2">
-          <FilterOption
-            selected={!filters.difficulty}
-            onClick={() => onFilterChange('difficulty', '')}
+          <FilterCheckbox
+            checked={!filters.difficulty}
+            onChange={() => onFilterChange('difficulty', '')}
             label="전체"
           />
           {Object.entries(DIFFICULTY_LABELS).map(([value, label]) => (
-            <FilterOption
+            <FilterCheckbox
               key={value}
-              selected={filters.difficulty === value}
-              onClick={() => onFilterChange('difficulty', value)}
+              checked={filters.difficulty === value}
+              onChange={() => onFilterChange('difficulty', filters.difficulty === value ? '' : value)}
               label={label}
             />
           ))}
         </div>
       </div>
-    </div>
-  );
-}
 
-// 필터 옵션
-function FilterOption({
-  selected,
-  onClick,
-  label,
-}: {
-  selected: boolean;
-  onClick: () => void;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
-        selected
-          ? 'bg-blue-50 text-blue-700 font-medium'
-          : 'text-gray-600 hover:bg-gray-100'
-      }`}
-    >
-      {label}
-    </button>
-  );
-}
-
-// 필터 태그
-function FilterTag({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm">
-      {label}
-      <button onClick={onRemove} className="hover:text-blue-900">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </span>
-  );
-}
-
-// 스켈레톤 카드
-function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden animate-pulse">
-      <div className="aspect-video bg-gray-200" />
-      <div className="p-4">
-        <div className="h-5 bg-gray-200 rounded mb-2 w-3/4" />
-        <div className="h-4 bg-gray-200 rounded w-1/2" />
-      </div>
-    </div>
-  );
-}
-
-// 빈 상태
-function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onClearFilters: () => void }) {
-  return (
-    <div className="text-center py-16">
-      <div className="text-5xl mb-4">🔍</div>
-      <h3 className="text-lg font-bold text-gray-900 mb-2">
-        {hasFilters ? '조건에 맞는 강습이 없습니다' : '등록된 강습이 없습니다'}
-      </h3>
-      <p className="text-gray-500 mb-6">
-        {hasFilters ? '다른 필터 조건으로 검색해보세요' : '곧 새로운 강습이 등록됩니다'}
-      </p>
       {hasFilters && (
         <button
           onClick={onClearFilters}
-          className="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+          className="w-full py-3 text-sm font-bold text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 rounded-xl transition-all"
         >
           필터 초기화
         </button>
@@ -505,53 +447,146 @@ function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onCle
   );
 }
 
-// 강습 카드
+// Filter Checkbox
+function FilterCheckbox({
+  checked,
+  onChange,
+  label,
+  icon,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+  icon?: string;
+}) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer group">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="w-5 h-5 rounded border-slate-300 text-primary focus:ring-offset-0 focus:ring-0 focus:border-primary transition-colors"
+      />
+      {icon && <span className="material-symbols-outlined text-slate-400 group-hover:text-primary text-[20px]">{icon}</span>}
+      <span className="text-slate-600 group-hover:text-slate-900 transition-colors">{label}</span>
+    </label>
+  );
+}
+
+// Filter Tag
+function FilterTag({ label, onRemove, isPrimary }: { label: string; onRemove: () => void; isPrimary?: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium ${
+      isPrimary 
+        ? 'bg-primary/20 border border-primary/30 text-primary' 
+        : 'bg-slate-100 border border-slate-200 text-slate-700'
+    }`}>
+      {label}
+      <button onClick={onRemove} className="hover:opacity-70 transition-opacity flex items-center">
+        <span className="material-symbols-outlined text-base">close</span>
+      </button>
+    </span>
+  );
+}
+
+// Skeleton Card
+function SkeletonCard() {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden animate-pulse">
+      <div className="aspect-video bg-slate-200" />
+      <div className="p-5">
+        <div className="h-4 bg-slate-200 rounded mb-3 w-1/3" />
+        <div className="h-5 bg-slate-200 rounded mb-2 w-3/4" />
+        <div className="h-4 bg-slate-200 rounded w-1/2" />
+      </div>
+    </div>
+  );
+}
+
+// Empty State
+function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onClearFilters: () => void }) {
+  return (
+    <div className="text-center py-16 bg-white rounded-2xl border border-slate-200">
+      <span className="material-symbols-outlined text-6xl text-slate-300 mb-4">search_off</span>
+      <h3 className="text-lg font-bold text-slate-900 mb-2">
+        {hasFilters ? '조건에 맞는 강습이 없습니다' : '등록된 강습이 없습니다'}
+      </h3>
+      <p className="text-slate-500 mb-6">
+        {hasFilters ? '다른 필터 조건으로 검색해보세요' : '곧 새로운 강습이 등록됩니다'}
+      </p>
+      {hasFilters && (
+        <button
+          onClick={onClearFilters}
+          className="inline-flex items-center px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-blue-600 transition"
+        >
+          필터 초기화
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Lesson Card
 function LessonCard({ lesson }: { lesson: any }) {
   const thumbnailUrl = lesson.active_content?.thumbnail_url
     ? `${API_BASE}${lesson.active_content.thumbnail_url}`
     : null;
 
-  const sportConfig = SPORT_CONFIG[lesson.sport_type] || SPORT_CONFIG.other;
-  const difficultyColor = DIFFICULTY_COLORS[lesson.difficulty] || 'bg-gray-100 text-gray-700';
+  const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
+  const difficultyStyle = DIFFICULTY_STYLES[lesson.difficulty] || { bg: 'bg-slate-500/20', text: 'text-slate-400', border: 'border-slate-500/30' };
 
   return (
     <Link
       to={`/lessons/${lesson.id}`}
-      className="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+      className="group bg-white rounded-xl overflow-hidden border border-slate-200 hover:border-primary hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
     >
-      {/* 썸네일 */}
-      <div className="aspect-video relative overflow-hidden bg-gray-100">
+      {/* Thumbnail */}
+      <div className="relative aspect-video overflow-hidden">
         {thumbnailUrl ? (
           <img
             src={thumbnailUrl}
             alt={lesson.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
-          <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${sportConfig.color}`}>
-            <span className="text-5xl opacity-80">{sportConfig.icon}</span>
+          <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+            <span className="material-symbols-outlined text-5xl text-slate-400">{sportIcon}</span>
           </div>
         )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-60"></div>
         
-        {/* 종목 뱃지 */}
-        <span className="absolute top-2.5 left-2.5 bg-white/95 text-gray-800 text-xs px-2.5 py-1 rounded-full font-medium">
-          {sportConfig.icon} {SPORT_LABELS[lesson.sport_type]}
-        </span>
+        {/* Sport Badge */}
+        <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-md text-white text-xs font-bold px-3 py-1 rounded-full border border-white/10 flex items-center gap-1">
+          <span className="material-symbols-outlined text-sm">{sportIcon}</span>
+          {SPORT_LABELS[lesson.sport_type]}
+        </div>
       </div>
 
-      {/* 정보 */}
-      <div className="p-4">
-        <h3 className="font-bold text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
-          {lesson.title}
-        </h3>
-        <div className="flex items-center gap-2 text-sm">
-          <span className={`px-2 py-0.5 rounded text-xs font-medium ${difficultyColor}`}>
+      {/* Info */}
+      <div className="p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <span className={`${difficultyStyle.bg} ${difficultyStyle.text} text-xs px-2 py-1 rounded-md font-medium border ${difficultyStyle.border}`}>
             {DIFFICULTY_LABELS[lesson.difficulty]}
           </span>
-          <span className="text-gray-400">·</span>
-          <span className="text-gray-500">
-            {TARGET_LABELS[lesson.target_audience]}
-          </span>
+          <span className="text-slate-400 text-xs">•</span>
+          <span className="text-slate-500 text-xs font-medium">{TARGET_LABELS[lesson.target_audience]}</span>
+        </div>
+        
+        <h3 className="text-slate-900 text-lg font-bold leading-tight mb-2 group-hover:text-primary transition-colors line-clamp-2">
+          {lesson.title}
+        </h3>
+        
+        {lesson.active_content?.introduction && (
+          <p className="text-slate-500 text-sm line-clamp-2 mb-4">
+            {lesson.active_content.introduction}
+          </p>
+        )}
+
+        <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+          <div className="flex items-center gap-2 text-slate-400 text-sm">
+            <span className="material-symbols-outlined text-lg">person</span>
+            {lesson.instructor_name || '강사 미정'}
+          </div>
         </div>
       </div>
     </Link>

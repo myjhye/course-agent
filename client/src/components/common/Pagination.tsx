@@ -36,40 +36,42 @@ export default function Pagination({ page, totalPages, onPageChange }: Paginatio
   };
 
   return (
-    <div className="flex items-center justify-center gap-1 mt-6">
+    <div className="flex items-center justify-center gap-2">
+      {/* Previous Button */}
       <button
         onClick={() => onPageChange(page - 1)}
         disabled={page <= 1}
-        className="px-3 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+        className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-slate-700 hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        이전
+        <span className="material-symbols-outlined">chevron_left</span>
       </button>
       
+      {/* Page Numbers */}
       {getPageNumbers().map((p, idx) => (
         <button
           key={idx}
           onClick={() => typeof p === 'number' && onPageChange(p)}
           disabled={p === '...'}
-          className={`px-3 py-2 rounded-lg text-sm ${
+          className={`w-10 h-10 rounded-lg text-sm font-medium transition-colors ${
             p === page
-              ? 'bg-blue-600 text-white'
+              ? 'bg-primary text-white shadow-lg shadow-primary/20'
               : p === '...'
-              ? 'cursor-default'
-              : 'hover:bg-gray-100'
+              ? 'cursor-default text-slate-400 px-2'
+              : 'bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }`}
         >
           {p}
         </button>
       ))}
       
+      {/* Next Button */}
       <button
         onClick={() => onPageChange(page + 1)}
         disabled={page >= totalPages}
-        className="px-3 py-2 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+        className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-slate-700 hover:border-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        다음
+        <span className="material-symbols-outlined">chevron_right</span>
       </button>
     </div>
   );
 }
-
