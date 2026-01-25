@@ -35,3 +35,4 @@ class EnrollmentDetailResponse(EnrollmentResponse):
     lesson_title: str
     lesson_sport_type: str
     lesson_difficulty: str
+    lesson_thumbnail_url: Optional[str] = None
