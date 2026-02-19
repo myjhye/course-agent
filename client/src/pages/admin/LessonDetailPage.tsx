@@ -259,7 +259,9 @@ export default function LessonDetailPage() {
                     {content.thumbnail_url ? (
                       <>
                         <img
-                          src={`${API_BASE}${content.thumbnail_url}`}
+                          src={content.thumbnail_url.startsWith('http')
+                            ? content.thumbnail_url
+                            : `${API_BASE}${content.thumbnail_url}`}
                           alt="썸네일"
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                         />

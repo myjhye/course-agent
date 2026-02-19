@@ -6,6 +6,7 @@ import { lessonApi, myEnrollmentApi } from '../services/api';
 import { DIFFICULTY_LABELS, SPORT_LABELS, TARGET_LABELS } from '../constants/labels';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const STUDENT_NAME = '홍길동';
 
 // Material Symbols 아이콘 매핑
@@ -143,7 +144,9 @@ export default function LessonDetailPage() {
 
   const content = lesson.active_content;
   const thumbnailUrl = content?.thumbnail_url
-    ? `${API_BASE}${content.thumbnail_url}`
+    ? content.thumbnail_url.startsWith('http')
+      ? content.thumbnail_url
+      : `${API_BASE}${content.thumbnail_url}`
     : null;
   const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
   const difficultyStyle = DIFFICULTY_STYLES[lesson.difficulty] || { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' };
