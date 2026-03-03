@@ -7,7 +7,8 @@ from sqlalchemy.orm import selectinload
 from app.models.lesson import Lesson
 from app.models.lesson_content import LessonContent
 from app.models.ai_log import AILog
-from app.services.ai.llm_client import get_openai_client, generate_image
+from app.services.ai.llm_client import get_openai_client
+from app.constants.thumbnails import get_default_thumbnail
 
 
 class ContentGenerator:
@@ -24,8 +25,8 @@ class ContentGenerator:
         # 2. 커리큘럼 생성
         curriculum = await ContentGenerator._generate_curriculum(lesson)
         
-        # 3. 썸네일 생성
-        thumbnail_url = await ContentGenerator._generate_thumbnail(lesson)
+        # 3. 종목별 기본 썸네일 적용
+        thumbnail_url = get_default_thumbnail(lesson.sport_type.value)
         
         # 4. 버전 계산
         result = await db.execute(
@@ -121,35 +122,6 @@ class ContentGenerator:
             lesson_id=lesson.id,
             input_data={"title": lesson.title, "action": "regenerate_curriculum"},
             output_data={"weeks_count": len(curriculum.get("weeks", []))}
-        )
-        db.add(ai_log)
-        
-        await db.commit()
-        await db.refresh(content)
-        
-        return content
-    
-    @staticmethod
-    async def regenerate_thumbnail(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
-        """썸네일만 재생성"""
-        
-        result = await db.execute(
-            select(LessonContent).where(LessonContent.id == content_id)
-        )
-        content = result.scalar_one_or_none()
-        
-        if not content:
-            raise ValueError("Content not found")
-        
-        thumbnail_url = await ContentGenerator._generate_thumbnail(lesson)
-        content.thumbnail_url = thumbnail_url
-        
-        # AI 로그
-        ai_log = AILog(
-            feature_type="content",
-            lesson_id=lesson.id,
-            input_data={"title": lesson.title, "action": "regenerate_thumbnail"},
-            output_data={"thumbnail_url": thumbnail_url}
         )
         db.add(ai_log)
         
@@ -311,23 +283,6 @@ class ContentGenerator:
                 for i in range(1, num_weeks + 1)
             ]
         }
-    
-    @staticmethod
-    async def _generate_thumbnail(lesson: Lesson) -> str:
-        """썸네일 생성"""
-        try:
-            thumbnail_prompt = f"""
-Create a professional sports lesson thumbnail image.
-Lesson title: "{lesson.title}"
-Sport type: {lesson.sport_type.value}
-Target: {lesson.target_audience.value}
-Difficulty: {lesson.difficulty.value}
-Requirements: High quality, 16:9 aspect ratio, No text.
-"""
-            return generate_image(thumbnail_prompt)
-        except Exception as e:
-            print(f"썸네일 생성 실패: {e}")
-            return None
 
 
 # 기존 함수들 호환성 유지

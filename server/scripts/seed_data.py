@@ -9,9 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.database import AsyncSessionLocal
 from app.models.instructor import Instructor
 from app.models.lesson import Lesson, SportType, TargetAudience, Difficulty, LessonStatus
+from app.models.lesson_content import LessonContent
 from app.models.enrollment import Enrollment, EnrollmentStatus
 from app.models.lesson_interest import LessonView, LessonLike
 from app.models.faq import FAQ
+from app.constants.thumbnails import get_default_thumbnail
 
 
 # ============================================================
@@ -311,6 +313,20 @@ async def seed():
             lesson_objects.append(lesson)
 
         print(f"✅ 강습 {len(LESSON_TEMPLATES)}개 생성 완료")
+
+        # 2-1) 강습별 기본 콘텐츠 시드 (기본 썸네일 포함)
+        for lesson in lesson_objects:
+            content = LessonContent(
+                lesson_id=lesson.id,
+                introduction=None,
+                curriculum=None,
+                thumbnail_url=get_default_thumbnail(lesson.sport_type.value),
+                version=1,
+                is_active=True,
+            )
+            db.add(content)
+
+        print(f"✅ 강습 콘텐츠(기본 썸네일) {len(lesson_objects)}개 생성 완료")
 
         # ──────────────────────────────────────────────
         # 3) FAQ 시드

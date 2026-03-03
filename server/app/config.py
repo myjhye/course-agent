@@ -5,7 +5,6 @@ from typing import Optional
 class Settings(BaseSettings):
     database_url: str
     openai_api_key: str
-    gemini_api_key: str
     
     # 추가: 기본값은 로컬 주소로 설정하되, 환경 변수가 있으면 그걸 씁니다.
     # Railway에서는 RAILWAY_PUBLIC_DOMAIN 환경 변수를 자동으로 제공하기도 합니다.

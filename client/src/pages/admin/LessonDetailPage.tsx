@@ -15,7 +15,6 @@ export default function LessonDetailPage() {
   const [publishing, setPublishing] = useState(false);
   const [regeneratingIntro, setRegeneratingIntro] = useState(false);
   const [regeneratingCurriculum, setRegeneratingCurriculum] = useState(false);
-  const [regeneratingThumbnail, setRegeneratingThumbnail] = useState(false);
 
   useEffect(() => {
     loadLesson();
@@ -105,20 +104,6 @@ export default function LessonDetailPage() {
       alert('커리큘럼 재생성에 실패했습니다.');
     } finally {
       setRegeneratingCurriculum(false);
-    }
-  };
-
-  const handleRegenerateThumbnail = async () => {
-    if (!id || !content) return;
-    setRegeneratingThumbnail(true);
-    try {
-      await adminLessonApi.regenerateThumbnail(Number(id), content.id);
-      await loadLesson();
-    } catch (err) {
-      console.error(err);
-      alert('썸네일 재생성에 실패했습니다.');
-    } finally {
-      setRegeneratingThumbnail(false);
     }
   };
 
@@ -244,17 +229,7 @@ export default function LessonDetailPage() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Thumbnail */}
                 <div className="lg:col-span-1 flex flex-col gap-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-bold text-slate-700">썸네일</label>
-                    <button
-                      onClick={handleRegenerateThumbnail}
-                      disabled={regeneratingThumbnail}
-                      className="text-purple-600 hover:text-purple-700 text-xs font-bold flex items-center gap-1 disabled:opacity-50"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">refresh</span>
-                      {regeneratingThumbnail ? '재생성 중...' : '재생성'}
-                    </button>
-                  </div>
+                  <label className="text-sm font-bold text-slate-700">썸네일</label>
                   <div className="relative group aspect-video w-full overflow-hidden rounded-2xl bg-slate-200 shadow-inner">
                     {content.thumbnail_url ? (
                       <>

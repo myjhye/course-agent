@@ -180,21 +180,6 @@ async def regenerate_curriculum(
     return {"message": "커리큘럼이 재생성되었습니다.", "curriculum": content.curriculum}
 
 
-@router.post("/{lesson_id}/contents/{content_id}/regenerate-thumbnail")
-async def regenerate_thumbnail(
-    lesson_id: int,
-    content_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """썸네일 재생성"""
-    lesson = await LessonService.get_lesson_by_id(db, lesson_id)
-    if not lesson:
-        raise HTTPException(status_code=404, detail="Lesson not found")
-    
-    content = await ContentGenerator.regenerate_thumbnail(db, lesson, content_id)
-    return {"message": "썸네일이 재생성되었습니다.", "thumbnail_url": content.thumbnail_url}
-
-
 @router.post("/{lesson_id}/publish", response_model=LessonResponse)
 async def publish_lesson(lesson_id: int, db: AsyncSession = Depends(get_db)):
     """강습 발행"""

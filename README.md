@@ -9,7 +9,7 @@ Course Agent는 스포츠 강습 플랫폼에 AI를 접목한 프로젝트입니
 
 ### 주요 특징
 
-- **AI 콘텐츠 자동 생성**: 강습 등록 시 GPT-4o-mini로 소개문구/커리큘럼 생성, Gemini로 썸네일 이미지 생성
+- **AI 콘텐츠 자동 생성**: 강습 등록 시 GPT-4o-mini로 소개문구/커리큘럼 생성, 종목별 기본 썸네일 자동 적용(Unsplash 이미지)
 - **맞춤형 추천 시스템**: 수강 이력, 출석률, 조회/찜 기록을 기반으로 3가지 카테고리(다음 단계/새로운 도전/관심 기반) 추천
 - **멀티스텝 AI 챗봇**: Function Calling 기반 Agent가 최대 5회 도구를 순차 호출하여 복잡한 질문 처리
 - **운영 대시보드**: 강습/수강 통계, AI 사용량 모니터링
@@ -40,7 +40,6 @@ Course Agent는 스포츠 강습 플랫폼에 AI를 접목한 프로젝트입니
 | PostgreSQL | 데이터베이스 |
 | Alembic | DB 마이그레이션 |
 | OpenAI GPT-4o-mini | 텍스트 생성 (소개문구, 커리큘럼, 추천 이유, 피드백) |
-| Google Gemini | 이미지 생성 (썸네일) |
 
 ### Frontend
 
@@ -81,7 +80,7 @@ course-agent/
 │   │   │   └── chat.py              # AI 채팅
 │   │   ├── services/
 │   │   │   ├── ai/
-│   │   │   │   ├── llm_client.py    # OpenAI/Gemini 클라이언트
+│   │   │   │   ├── llm_client.py    # OpenAI 클라이언트
 │   │   │   │   ├── content_generator.py # 콘텐츠 생성
 │   │   │   │   ├── tools.py         # Function Calling 도구 정의
 │   │   │   │   └── tool_executor.py # 도구 실행기
@@ -92,7 +91,7 @@ course-agent/
 │   │   ├── schemas/                 # Pydantic 스키마
 │   │   └── main.py                  # FastAPI 앱
 │   ├── alembic/                     # 마이그레이션
-│   └── static/thumbnails/           # 생성된 썸네일 이미지
+│   └── static/thumbnails/           # (이전 버전에서 사용하던 썸네일 폴더, 현재는 기본 URL 사용)
 │
 ├── client/                          # React 프론트엔드
 │   ├── src/
@@ -129,9 +128,9 @@ course-agent/
 |------|------|------|
 | 소개 문구 | GPT-4o-mini | 대상/난이도에 맞는 3~4문장 |
 | 커리큘럼 | GPT-4o-mini | 난이도별 4~8주차 체계적 구성 |
-| 썸네일 | Gemini | 종목/대상에 맞는 이미지 생성 |
+| 썸네일 | (모델 사용 안 함) | 종목별 기본 Unsplash 썸네일 자동 적용 |
 
-각 항목별 개별 재생성 가능
+소개/커리큘럼은 항목별 개별 재생성 가능
 
 ### 2. 맞춤형 추천 시스템
 

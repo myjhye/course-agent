@@ -63,8 +63,6 @@ export const adminLessonApi = {
     api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-introduction`),
   regenerateCurriculum: (lessonId: number, contentId: number) =>
     api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-curriculum`),
-  regenerateThumbnail: (lessonId: number, contentId: number) =>
-    api.post(`/api/admin/lessons/${lessonId}/contents/${contentId}/regenerate-thumbnail`),
   
   // 발행
   publish: (id: number) => api.post<Lesson>(`/api/admin/lessons/${id}/publish`),
