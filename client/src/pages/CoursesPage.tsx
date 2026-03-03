@@ -3,9 +3,7 @@ import { Link } from 'react-router-dom';
 import { lessonApi } from '../services/api';
 import type { Lesson } from '../types';
 import { SPORT_LABELS } from '../constants/labels';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const DEFAULT_THUMBNAIL = '/default-thumbnail.jpeg';
+import { getImageUrl, handleImageError } from '../utils/image';
 
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Lesson[]>([]);
@@ -26,13 +24,6 @@ export default function CoursesPage() {
     fetchCourses();
   }, []);
 
-  const getThumbnailUrl = (url: string | null | undefined) => {
-    if (!url) return DEFAULT_THUMBNAIL;
-    if (url.startsWith('/')) {
-      return `${API_BASE}${url}`;
-    }
-    return url;
-  };
 
   if (loading) return <div className="p-8 text-center">로딩 중...</div>;
 
@@ -61,12 +52,10 @@ export default function CoursesPage() {
             >
               <div className="relative aspect-video bg-slate-100 overflow-hidden">
                 <img 
-                  src={getThumbnailUrl(thumbnail)} 
+                  src={getImageUrl(thumbnail)} 
                   alt={course.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = DEFAULT_THUMBNAIL;
-                  }}
+                  onError={handleImageError}
                 />
                 <div className="absolute top-3 left-3">
                   <span className="bg-white/90 backdrop-blur px-2.5 py-1 rounded-lg text-xs font-bold text-blue-600 shadow-sm">

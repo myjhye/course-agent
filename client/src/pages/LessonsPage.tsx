@@ -4,8 +4,7 @@ import { Lesson } from '../types';
 import { lessonApi } from '../services/api';
 import Pagination from '../components/common/Pagination';
 import { DIFFICULTY_LABELS, SPORT_LABELS, TARGET_LABELS } from '../constants/labels';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getImageUrl } from '../utils/image';
 
 // Material Symbols 아이콘 매핑
 const SPORT_ICONS: Record<string, string> = {
@@ -528,9 +527,7 @@ function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onCle
 
 // Lesson Card
 function LessonCard({ lesson }: { lesson: any }) {
-  const thumbnailUrl = lesson.active_content?.thumbnail_url
-    ? `${API_BASE}${lesson.active_content.thumbnail_url}`
-    : null;
+  const thumbnailUrl = getImageUrl(lesson.active_content?.thumbnail_url);
 
   const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
   const difficultyStyle = DIFFICULTY_STYLES[lesson.difficulty] || { bg: 'bg-slate-500/20', text: 'text-slate-400', border: 'border-slate-500/30' };

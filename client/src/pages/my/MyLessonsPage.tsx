@@ -4,8 +4,8 @@ import { lessonApi } from '../../services/api';
 import type { Lesson, SportType, TargetAudience, Difficulty } from '../../types';
 import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
+import { getImageUrl } from '../../utils/image';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const STUDENT_NAME = '홍길동'; // 하드코딩
 
 const SPORT_OPTIONS: { value: SportType | ''; label: string }[] = [
@@ -260,9 +260,7 @@ function LessonCard({
   onToggleLike: (lessonId: number, e: React.MouseEvent) => void;
 }) {
   // active_content가 null일 수 있으므로 옵셔널 체이닝 사용
-  const thumbnailUrl = lesson.active_content?.thumbnail_url
-    ? `${API_BASE}${lesson.active_content.thumbnail_url}`
-    : null;
+  const thumbnailUrl = getImageUrl(lesson.active_content?.thumbnail_url);
 
   return (
     <Link

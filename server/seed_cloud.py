@@ -14,7 +14,12 @@ Railway 클라우드 DB에 초기 데이터를 삽입하는 스크립트입니�
 
 import asyncio
 import sys
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# 프로젝트 루트의 .env 파일을 강제로 로드합니다.
+load_dotenv()
 
 # 프로젝트 루트를 Python path에 추가
 sys.path.insert(0, str(Path(__file__).resolve().parent))

@@ -7,8 +7,8 @@ import {
   DIFFICULTY_LABELS,
   TARGET_LABELS,
 } from '../../constants/labels';
+import { getImageUrl } from '../../utils/image';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const STUDENT_NAME = '홍길동';
 
 // Material Symbols 아이콘 매핑
@@ -454,7 +454,7 @@ function EnrollmentCard({ enrollment }: { enrollment: any }) {
   const thumbnailUrl = enrollment.lesson?.active_content?.thumbnail_url
     || enrollment.lesson_thumbnail_url
     || null;
-  const fullThumbnailUrl = thumbnailUrl ? `${API_BASE}${thumbnailUrl}` : null;
+  const fullThumbnailUrl = getImageUrl(thumbnailUrl);
   
   const statusConfig = STATUS_CONFIG[enrollment.status] || STATUS_CONFIG.enrolled;
   const sportIcon = SPORT_ICONS[sportType] || 'sports';
@@ -541,7 +541,7 @@ function LikedLessonCard({
   lesson: any;
   onUnlike: () => void;
 }) {
-  const thumbnailUrl = lesson.thumbnail_url ? `${API_BASE}${lesson.thumbnail_url}` : null;
+  const thumbnailUrl = getImageUrl(lesson.thumbnail_url);
   const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
 
   return (
@@ -600,7 +600,7 @@ function AIRecommendationCard({
   gradientVia: string;
   gradientTo: string;
 }) {
-  const thumbnailUrl = item.lesson.thumbnail_url ? `${API_BASE}${item.lesson.thumbnail_url}` : null;
+  const thumbnailUrl = getImageUrl(item.lesson.thumbnail_url);
   const sportIcon = SPORT_ICONS[item.lesson.sport_type] || 'sports';
 
   const categoryClasses = {

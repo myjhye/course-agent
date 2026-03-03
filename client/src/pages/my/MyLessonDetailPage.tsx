@@ -3,8 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { lessonApi, myEnrollmentApi } from '../../services/api';
 import type { LessonDetail } from '../../types';
 import { SPORT_LABELS, TARGET_LABELS, DIFFICULTY_LABELS } from '../../constants/labels';
+import { getImageUrl } from '../../utils/image';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const STUDENT_NAME = '홍길동'; // 하드코딩
 
 export default function MyLessonDetailPage() {
@@ -107,9 +107,7 @@ export default function MyLessonDetailPage() {
   }
 
   const content = lesson.active_content;
-  const thumbnailUrl = content?.thumbnail_url
-    ? `${API_BASE}${content.thumbnail_url}`
-    : null;
+  const thumbnailUrl = getImageUrl(content?.thumbnail_url);
 
   return (
     <div className="min-h-screen bg-gray-50">

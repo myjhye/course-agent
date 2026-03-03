@@ -4,8 +4,7 @@ import { adminLessonApi } from '../../services/api';
 import type { Lesson } from '../../types';
 import Pagination from '../../components/common/Pagination';
 import { SPORT_LABELS, DIFFICULTY_LABELS, STATUS_LABELS } from '../../constants/labels';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getImageUrl } from '../../utils/image';
 
 // Material Symbols 아이콘 매핑
 const SPORT_ICONS: Record<string, string> = {
@@ -125,9 +124,7 @@ export default function LessonsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {lessons.map((lesson) => {
-                    const thumbnailUrl = lesson.active_content?.thumbnail_url
-                      ? `${API_BASE}${lesson.active_content.thumbnail_url}`
-                      : null;
+                    const thumbnailUrl = getImageUrl(lesson.active_content?.thumbnail_url);
                     const sportIcon = SPORT_ICONS[lesson.sport_type] || 'sports';
 
                     return (

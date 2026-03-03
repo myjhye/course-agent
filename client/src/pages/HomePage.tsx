@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lessonApi, myRecommendationApi } from '../services/api';
 import { SPORT_LABELS, DIFFICULTY_LABELS } from '../constants/labels';
+import { getImageUrl } from '../utils/image';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const STUDENT_NAME = '홍길동';
 
 const CATEGORIES = [
@@ -170,7 +170,7 @@ export default function HomePage() {
                     </div>
                     {recList[0].data.lesson.thumbnail_url ? (
                       <img
-                        src={`${API_BASE}${recList[0].data.lesson.thumbnail_url}`}
+                        src={getImageUrl(recList[0].data.lesson.thumbnail_url)}
                         alt=""
                         className="w-full h-full object-cover"
                       />
@@ -328,9 +328,7 @@ export default function HomePage() {
 
 function RecommendationCard({ type, item }: { type: keyof typeof REC_STYLES; item: any }) {
   const style = REC_STYLES[type];
-  const thumbnailUrl = item.lesson.thumbnail_url
-    ? `${API_BASE}${item.lesson.thumbnail_url}`
-    : null;
+  const thumbnailUrl = getImageUrl(item.lesson.thumbnail_url);
 
   return (
     <Link
@@ -401,9 +399,7 @@ function RecommendationCard({ type, item }: { type: keyof typeof REC_STYLES; ite
 }
 
 function PopularCard({ lesson, rank }: { lesson: any; rank: number }) {
-  const thumbnailUrl = lesson.active_content?.thumbnail_url
-    ? `${API_BASE}${lesson.active_content.thumbnail_url}`
-    : null;
+  const thumbnailUrl = getImageUrl(lesson.active_content?.thumbnail_url);
 
   return (
     <Link to={`/lessons/${lesson.id}`} className="group block">

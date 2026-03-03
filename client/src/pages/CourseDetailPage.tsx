@@ -3,10 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { lessonApi } from '../services/api';
 import type { LessonDetail } from '../types';
-
-// 2. 배포 환경을 위해 API 주소 설정
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const DEFAULT_THUMBNAIL = '/default-thumbnail.jpeg';
+import { getImageUrl, handleImageError } from '../utils/image';
 
 export default function CourseDetailPage() {
   const { id } = useParams();
@@ -32,15 +29,6 @@ export default function CourseDetailPage() {
     fetchCourse();
   }, [id]);
 
-  const getThumbnailUrl = (url: string | null) => {
-    if (!url) return DEFAULT_THUMBNAIL;
-    if (url.startsWith('/')) {
-      // localhost 대신 API_BASE 사용 (배포 환경 대응)
-      return `${API_BASE}${url}`;
-    }
-    return url;
-  };
-
   if (loading) return <div className="p-8">로딩 중...</div>;
   if (!course) return <div className="p-8">강의를 찾을 수 없습니다.</div>;
 
@@ -60,12 +48,10 @@ export default function CourseDetailPage() {
 
       {/* 썸네일 이미지 */}
       <img 
-        src={getThumbnailUrl(thumbnail)} 
+        src={getImageUrl(thumbnail)} 
         alt={course.title}
         className="w-full h-64 object-cover rounded-lg mb-6 bg-gray-200"
-        onError={(e) => {
-          (e.target as HTMLImageElement).src = DEFAULT_THUMBNAIL;
-        }}
+        onError={handleImageError}
       />
 
       <h1 className="text-3xl font-bold mb-2">{course.title}</h1>
