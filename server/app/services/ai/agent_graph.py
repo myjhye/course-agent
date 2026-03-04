@@ -23,8 +23,17 @@ def should_use_tool(state: AgentState) -> Literal["tool_executor", "response"]:
     return "tool_executor"
 
 
+# 같은 툴이 이 횟수 이상 호출되면 무한 루프 방지를 위해 무조건 응답 노드로 이동
+MAX_TOOL_CALLS = 3
+
+
 def should_retry_or_respond(state: AgentState) -> Literal["tool_executor", "response"]:
     """Validator 결과에 따라 재시도 또는 응답 생성을 결정한다."""
+    # 방어: 툴 호출이 3회 이상이면 무조건 response로 (무한 반복 방지)
+    tools_used = state.get("tools_used") or []
+    if len(tools_used) >= MAX_TOOL_CALLS:
+        return "response"
+
     if state.get("is_valid", False):
         return "response"
 

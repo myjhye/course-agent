@@ -21,8 +21,12 @@ ROUTER_SYSTEM_PROMPT = """사용자의 메시지를 분석하여 의도를 분�
 
 반드시 아래 5가지 중 하나만 JSON으로 응답하세요:
 
-1. "search_lessons" - 특정 종목/조건으로 강습을 검색하려는 경우
+1. "search_lessons" - 특정 종목/조건으로 **강습 목록을 검색**하려는 경우
    예: "수영 강습 알려줘", "초급 요가 있어?", "골프 배우고 싶어", "테니스 강습 추천해줘"
+   **단, 아래는 search_lessons가 아님 → faq_inquiry로 분류:**
+   - "~해도 괜찮을까?", "~할 수 있을까?", "~해도 되나요?" 같은 **정보/안내를 묻는 질문**
+   - 종목이 언급되더라도 "물이 무서운데 수영 배울 수 있어?", "허리 아픈데 요가 해도 될까?"처럼 **가능 여부·조건·우려**를 물을 때
+   → 이런 질문은 강습 검색이 아니라 faq_inquiry(지식/FAQ 검색)로 분류하세요.
    
 2. "get_recommendations" - 특정 종목 없이 일반적인 추천을 요청하는 경우
    예: "추천해줘", "뭐 들을까", "나한테 맞는 강습"
@@ -30,8 +34,8 @@ ROUTER_SYSTEM_PROMPT = """사용자의 메시지를 분석하여 의도를 분�
 3. "manage_enrollment" - 수강 현황 조회, 수강 관련 문의
    예: "내 수강 현황", "지금 뭐 듣고 있어", "수강 중인 강습"
    
-4. "faq_inquiry" - 환불, 결제, 이용 방법 등 운영 관련 질문
-   예: "환불 어떻게 해?", "결제 방법", "수료증"
+4. "faq_inquiry" - **정보·안내·가능 여부**를 묻는 질문 (환불/결제/이용 방법 포함)
+   예: "환불 어떻게 해?", "결제 방법", "수료증", "물 무서운데 수영 배울 수 있어?", "허리 아픈데 요가 해도 될까?", "운동 초보인데 PT 받을 수 있어?"
    
 5. "general_inquiry" - 인사, 감사, 잡담 등 Tool이 필요 없는 경우
    예: "안녕", "고마워", "오늘 날씨 좋다"
@@ -189,21 +193,28 @@ JSON으로 응답 (해당 없는 필드는 null):
 
 
 async def _extract_faq_keyword(client, state: AgentState) -> Dict[str, Any]:
-    """사용자 메시지에서 FAQ 검색 키워드를 추출한다."""
+    """
+    사용자 메시지에서 벡터 검색에 최적화된 FAQ/플랫폼 질문 문장을 추출한다.
+    """
 
-    prompt = f"""사용자 질문에서 FAQ 검색에 사용할 핵심 키워드를 추출하세요.
+    prompt = f"""사용자 질문에서 벡터 검색에 사용할 핵심 문장을 추출하세요.
 
 메시지: "{state['user_message']}"
 
+규칙:
+- 질문의 핵심 의미를 담은 짧은 문장으로 변환
+- 불필요한 접속사, 감탄사, 존댓말 표현은 제거
+- 의미가 보존된다면 동의어/유사어를 적절히 사용해도 좋음
+
 JSON으로 응답:
-{{"keyword": "핵심 키워드"}}"""
+{{"keyword": "검색 최적화된 문장"}}"""
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
-            max_tokens=50,
+            max_tokens=80,
             response_format={"type": "json_object"},
         )
         return json.loads(response.choices[0].message.content)

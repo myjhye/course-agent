@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 from typing import Any
+
 from app.models.lesson import Lesson, LessonStatus
 from app.models.enrollment import Enrollment
 from app.models.faq import FAQ
@@ -9,41 +10,40 @@ from app.services.recommendation_service import RecommendationService
 
 
 class ToolExecutor:
-    
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     async def execute(self, tool_name: str, arguments: dict) -> dict:
         """도구 실행"""
-        
+
         if tool_name == "search_lessons":
             return await self._search_lessons(
                 keyword=arguments.get("keyword"),
                 sport_type=arguments.get("sport_type"),
                 difficulty=arguments.get("difficulty"),
-                target_audience=arguments.get("target_audience")
+                target_audience=arguments.get("target_audience"),
             )
-        
+
         elif tool_name == "get_lesson_detail":
             return await self._get_lesson_detail(arguments.get("lesson_id"))
-        
+
         elif tool_name == "get_my_enrollments":
             return await self._get_my_enrollments(arguments.get("student_name"))
-        
+
         elif tool_name == "get_recommendations":
             return await self._get_recommendations(arguments.get("student_name"))
-        
+
         elif tool_name == "search_faq":
             return await self._search_faq(arguments.get("keyword"))
-        
+
         return {"success": False, "error": "Unknown tool"}
-    
+
     async def _search_lessons(
         self,
         keyword: str = None,
         sport_type: str = None,
         difficulty: str = None,
-        target_audience: str = None
+        target_audience: str = None,
     ) -> dict:
         """강습 검색"""
         
@@ -204,30 +204,72 @@ class ToolExecutor:
         
         if not keyword:
             return {"success": False, "data": [], "keyword": ""}
-        
+
+        # RAG 벡터 검색 + ILIKE 폴백
+        try:
+            from app.services.ai.embedding_service import search_similar
+
+            rag_results = await search_similar(
+                db=self.db,
+                query=keyword,
+                top_k=5,
+                similarity_threshold=0.3,
+            )
+
+            if rag_results:
+                return {
+                    "success": True,
+                    "data": [
+                        {
+                            "title": r["title"],
+                            "content": r["content"],
+                            "source_type": r["source_type"],
+                            "similarity": r["similarity"],
+                        }
+                        for r in rag_results
+                    ],
+                    "keyword": keyword,
+                    "search_method": "vector",
+                }
+
+            # 벡터 검색 결과가 없으면 폴백
+            return await self._search_faq_fallback(keyword)
+
+        except Exception as e:
+            # 임베딩/pgvector 에러 시 안전하게 폴백
+            print(f"[RAG] vector search error: {e}")
+            return await self._search_faq_fallback(keyword)
+
+    async def _search_faq_fallback(self, keyword: str) -> dict:
+        """벡터 검색 실패 시 기존 ILIKE 기반 FAQ 검색."""
+
+        if not keyword:
+            return {"success": False, "data": [], "keyword": ""}
+
         result = await self.db.execute(
             select(FAQ).where(
                 or_(
                     FAQ.question.ilike(f"%{keyword}%"),
                     FAQ.answer.ilike(f"%{keyword}%"),
-                    FAQ.keywords.ilike(f"%{keyword}%")
+                    FAQ.keywords.ilike(f"%{keyword}%"),
                 )
             ).limit(3)
         )
         faqs = list(result.scalars().all())
-        
+
         if not faqs:
             return {"success": False, "data": [], "keyword": keyword}
-        
+
         return {
             "success": True,
             "data": [
                 {
-                    "question": f.question,
-                    "answer": f.answer
+                    "title": f.question,
+                    "content": f.answer,
                 }
                 for f in faqs
             ],
-            "keyword": keyword
+            "keyword": keyword,
+            "search_method": "ilike_fallback",
         }
 
