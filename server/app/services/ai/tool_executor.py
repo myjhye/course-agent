@@ -240,8 +240,20 @@ class ToolExecutor:
 
         except Exception as e:
             # 임베딩/pgvector 에러 시 안전하게 폴백
-            print(f"[RAG] vector search error: {e}")
-            return await self._search_faq_fallback(keyword)
+            print(f"[RAG] 벡터 검색 에러: {e}, ILIKE 폴백")
+            # 벡터 검색 중 트랜잭션이 깨졌을 수 있으므로 롤백
+            await self.db.rollback()
+            try:
+                return await self._search_faq_fallback(keyword)
+            except Exception as e2:
+                print(f"[RAG] ILIKE 폴백도 실패: {e2}")
+                await self.db.rollback()
+                return {
+                    "success": False,
+                    "data": [],
+                    "keyword": keyword,
+                    "error": str(e2),
+                }
 
     async def _search_faq_fallback(self, keyword: str) -> dict:
         """벡터 검색 실패 시 기존 ILIKE 기반 FAQ 검색."""
