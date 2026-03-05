@@ -6,7 +6,7 @@ LangGraph가 이를 기존 상태에 merge한다.
 """
 
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, AsyncGenerator
 
 from app.services.ai.agent_state import AgentState
 from app.services.ai.llm_client import get_openai_client
@@ -583,4 +583,113 @@ def _build_response_prompt(student_name: Optional[str]) -> str:
 - 마무리 문장으로 추가 도움을 제안
 - 도구 실행 결과의 JSON을 그대로 보여주지 말고, 자연스러운 한국어 문장으로 설명
 """
+
+
+async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    Response 노드의 스트리밍 버전.
+    OpenAI의 stream=True를 사용하여 토큰 단위로 yield한다.
+    """
+
+    client = get_openai_client()
+    intent = state["intent"]
+    student_name = state.get("student_name")
+
+    system_prompt = _build_response_prompt(student_name)
+
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+
+    for msg in state.get("chat_history", []):
+        messages.append({"role": msg["role"], "content": msg["content"]})
+
+    user_content = f"사용자 질문: {state['user_message']}"
+
+    if intent != "general_inquiry" and state.get("tool_result") is not None:
+        tool_result = state["tool_result"] or {}
+        user_content += (
+            f"\n\n[도구 실행 결과]\n"
+            f"도구: {state.get('tool_name')}\n"
+            f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
+        )
+
+        if not tool_result.get("success") or not tool_result.get("data"):
+            user_content += (
+                "\n\n주의: 검색 결과가 없습니다. "
+                "사용자에게 친절하게 안내하고 대안을 제시해주세요."
+            )
+
+    messages.append({"role": "user", "content": user_content})
+
+    trace = _get_trace()
+
+    try:
+        obs_ctx = None
+        if trace:
+            obs_kwargs: Dict[str, Any] = {
+                "as_type": "generation",
+                "name": "response_stream",
+                "model": "gpt-4o-mini",
+                "input": {"messages": messages},
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                obs_kwargs["metadata"] = {"trace_id": trace_id}
+
+            obs_ctx = trace.start_as_current_observation(**obs_kwargs)
+
+        if obs_ctx is not None:
+            ctx = obs_ctx
+        else:
+            class _Noop:
+                def __enter__(self_nonlocal):
+                    return None
+
+                def __exit__(self_nonlocal, exc_type, exc, tb):
+                    return False
+
+            ctx = _Noop()
+
+        with ctx as gen:
+            stream = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1500,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+
+            full_content = ""
+            total_tokens = 0
+
+            for chunk in stream:
+                choice = chunk.choices[0] if chunk.choices else None
+                delta = choice.delta if choice else None
+
+                if delta and delta.content:
+                    text = delta.content
+                    full_content += text
+                    yield {"type": "token", "content": text}
+
+                if getattr(chunk, "usage", None):
+                    total_tokens = chunk.usage.total_tokens or 0
+
+            if gen is not None:
+                try:
+                    gen.update(
+                        output=full_content,
+                        usage_details={"total_tokens": total_tokens},
+                    )
+                except Exception:
+                    pass
+
+            if total_tokens:
+                yield {"type": "usage", "total_tokens": total_tokens}
+
+    except Exception as e:
+        print(f"[Response Stream] 에러: {e}")
+        yield {
+            "type": "token",
+            "content": "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        }
 

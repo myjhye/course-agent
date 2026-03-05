@@ -238,6 +238,98 @@ export const chatApi = {
       message,
       student_name: studentName
     }),
+  sendMessageStream: (
+    sessionId: string,
+    message: string,
+    studentName: string,
+    callbacks: {
+      onStatus?: (data: { step: string; message?: string; intent?: string }) => void;
+      onToken?: (data: { content: string }) => void;
+      onDone?: (data: { tools_used: string[]; total_tokens: number; message_id: number }) => void;
+      onError?: (error: string) => void;
+    },
+  ) => {
+    const abortController = new AbortController();
+
+    const baseUrl = api.defaults.baseURL || '';
+
+    fetch(`${baseUrl}/api/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: sessionId,
+        message,
+        student_name: studentName,
+      }),
+      signal: abortController.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          callbacks.onError?.(`HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          callbacks.onError?.('ReadableStream not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = '';
+
+          for (const line of lines) {
+            if (line.startsWith('event:')) {
+              currentEvent = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              const dataStr = line.slice(5).trim();
+              if (!dataStr) continue;
+
+              try {
+                const data = JSON.parse(dataStr);
+
+                switch (currentEvent) {
+                  case 'status':
+                    callbacks.onStatus?.(data);
+                    break;
+                  case 'token':
+                    callbacks.onToken?.(data);
+                    break;
+                  case 'done':
+                    callbacks.onDone?.(data);
+                    break;
+                  case 'error':
+                    callbacks.onError?.(data.message);
+                    break;
+                }
+              } catch {
+                // ignore JSON parse errors
+              }
+
+              currentEvent = '';
+            }
+          }
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          callbacks.onError?.(err.message);
+        }
+      });
+
+    return () => abortController.abort();
+  },
   getSessions: () =>
     api.get<ChatSession[]>('/api/chat/sessions'),
   getSessionDetail: (sessionId: string) =>

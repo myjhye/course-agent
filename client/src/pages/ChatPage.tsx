@@ -12,7 +12,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     setSessionId(uuidv4());
@@ -30,6 +32,7 @@ export default function ChatPage() {
     const userMessage = input.trim();
     setInput('');
     setLoading(true);
+    setStatusText('');
 
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
@@ -42,28 +45,75 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
-    try {
-      const res = await chatApi.sendMessage(sessionId, userMessage, STUDENT_NAME);
-      setMessages((prev) => [
-        ...prev.slice(0, -1),
-        res.data.user_message,
-        res.data.assistant_message,
-      ]);
-    } catch (err) {
-      console.error(err);
-      const errorMsg: ChatMessage = {
-        id: Date.now() + 1,
-        session_id: sessionId,
-        role: 'assistant',
-        content: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
-        tool_used: null,
-        tool_result: null,
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
-      setLoading(false);
-    }
+    // AI 응답 placeholder 추가
+    const tempAssistantMsg: ChatMessage = {
+      id: Date.now() + 1,
+      session_id: sessionId,
+      role: 'assistant',
+      content: '',
+      tool_used: null,
+      tool_result: null,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, tempAssistantMsg]);
+
+    const abort = chatApi.sendMessageStream(sessionId, userMessage, STUDENT_NAME, {
+      onStatus: (data) => {
+        const statusMap: Record<string, string> = {
+          router: '🔍 의도 분석 중...',
+          tool_executor: '📡 정보 검색 중...',
+          retry: '🔄 조건 완화 재검색 중...',
+          response: '✍️ 답변 생성 중...',
+        };
+        setStatusText(statusMap[data.step] || data.message || '');
+      },
+      onToken: (data) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            updated[updated.length - 1] = {
+              ...lastMsg,
+              content: lastMsg.content + data.content,
+            };
+          }
+          return updated;
+        });
+      },
+      onDone: (data) => {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant') {
+            updated[updated.length - 1] = {
+              ...lastMsg,
+              tool_used: data.tools_used?.join(',') || null,
+            };
+          }
+          return updated;
+        });
+        setLoading(false);
+        setStatusText('');
+      },
+      onError: (error) => {
+        console.error('Stream error:', error);
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastMsg = updated[updated.length - 1];
+          if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.content) {
+            updated[updated.length - 1] = {
+              ...lastMsg,
+              content: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
+            };
+          }
+          return updated;
+        });
+        setLoading(false);
+        setStatusText('');
+      },
+    });
+
+    abortRef.current = abort;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -168,7 +218,7 @@ export default function ChatPage() {
                   </span>
                 </div>
               </div>
-            ) : (
+            ) : msg.content ? (
               // AI Message
               <div className="flex items-start gap-4 max-w-3xl">
                 <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
@@ -198,20 +248,26 @@ export default function ChatPage() {
                   </div>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         ))}
 
-        {/* Typing Indicator */}
+        {/* Typing Indicator / Status */}
         {loading && (
           <div className="flex items-start gap-4">
             <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
               <span className="material-symbols-outlined text-primary text-[20px] opacity-50">smart_toy</span>
             </div>
-            <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex items-center gap-1 h-[46px]">
-              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
-              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
-              <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+            <div className="bg-white px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-slate-100 flex items-center gap-2 h-[46px]">
+              {statusText ? (
+                <span className="text-sm text-slate-500 animate-pulse">{statusText}</span>
+              ) : (
+                <>
+                  <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+                  <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+                  <div className="typing-dot h-2 w-2 bg-primary rounded-full"></div>
+                </>
+              )}
             </div>
           </div>
         )}
