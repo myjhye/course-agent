@@ -11,6 +11,17 @@ from typing import Dict, Any, Optional
 from app.services.ai.agent_state import AgentState
 from app.services.ai.llm_client import get_openai_client
 from app.services.ai.tool_executor import ToolExecutor
+from app.services.ai.langfuse_client import get_langfuse
+
+
+def _get_trace():
+    """
+    Langfuse 클라이언트를 반환한다.
+
+    - 설정이 없으면 None
+    - 각 노드는 state["trace_id"]를 metadata로만 활용한다.
+    """
+    return get_langfuse()
 
 
 # ============================================================
@@ -47,22 +58,64 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
     """사용자 의도를 분류한다."""
 
     client = get_openai_client()
+    trace = _get_trace()
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
-                {"role": "user", "content": state["user_message"]},
-            ],
-            temperature=0,
-            max_tokens=50,
-            response_format={"type": "json_object"},
-        )
+        messages = [
+            {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
+            {"role": "user", "content": state["user_message"]},
+        ]
 
-        result = json.loads(response.choices[0].message.content)
+        if trace:
+            obs_kwargs: Dict[str, Any] = {
+                "as_type": "generation",
+                "name": "router",
+                "model": "gpt-4o-mini",
+                "input": {
+                    "system": ROUTER_SYSTEM_PROMPT,
+                    "user": state["user_message"],
+                },
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                obs_kwargs["metadata"] = {"trace_id": trace_id}
+
+            with trace.start_as_current_observation(**obs_kwargs) as gen:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0,
+                    max_tokens=50,
+                    response_format={"type": "json_object"},
+                )
+
+                tokens = (
+                    response.usage.total_tokens
+                    if getattr(response, "usage", None)
+                    else 0
+                )
+                result = json.loads(response.choices[0].message.content)
+
+                gen.update(
+                    output=result,
+                    usage_details={"total_tokens": tokens},
+                )
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0,
+                max_tokens=50,
+                response_format={"type": "json_object"},
+            )
+            tokens = (
+                response.usage.total_tokens
+                if getattr(response, "usage", None)
+                else 0
+            )
+            result = json.loads(response.choices[0].message.content)
+
         intent = result.get("intent", "general_inquiry")
-        tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
 
         valid_intents = {
             "search_lessons",
@@ -97,7 +150,7 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
     기존 ToolExecutor를 그대로 활용한다.
     """
 
-    executor = ToolExecutor(db)
+    executor = ToolExecutor(db, trace_id=state.get("trace_id"))
     client = get_openai_client()
     intent = state["intent"]
     student_name = state.get("student_name")
@@ -139,12 +192,44 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
     if student_name and tool_name in ("get_my_enrollments", "get_recommendations"):
         tool_args["student_name"] = student_name
 
-    # Tool 실행
-    try:
-        tool_result = await executor.execute(tool_name, tool_args)
-    except Exception as e:
-        print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
-        tool_result = {"success": False, "error": str(e)}
+    # Tool 실행 + Langfuse span 기록
+    trace = _get_trace()
+
+    if trace:
+        span_kwargs: Dict[str, Any] = {
+            "as_type": "span",
+            "name": "tool_executor",
+            "input": {
+                "tool_name": tool_name,
+                "tool_args": tool_args,
+            },
+        }
+        trace_id = state.get("trace_id")
+        if trace_id:
+            span_kwargs["metadata"] = {"trace_id": trace_id}
+
+        try:
+            with trace.start_as_current_observation(**span_kwargs) as span:
+                try:
+                    tool_result = await executor.execute(tool_name, tool_args)
+                except Exception as e:
+                    print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
+                    tool_result = {"success": False, "error": str(e)}
+
+                span.update(output=tool_result)
+        except Exception:
+            # 관측 실패 시에는 기존 로직만 수행
+            try:
+                tool_result = await executor.execute(tool_name, tool_args)
+            except Exception as e:
+                print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
+                tool_result = {"success": False, "error": str(e)}
+    else:
+        try:
+            tool_result = await executor.execute(tool_name, tool_args)
+        except Exception as e:
+            print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
+            tool_result = {"success": False, "error": str(e)}
 
     # 사용한 Tool 기록
     tools_used = list(state.get("tools_used", []))
@@ -178,16 +263,52 @@ JSON으로 응답 (해당 없는 필드는 null):
   "keyword": "추가 키워드" 또는 null
 }}"""
 
+    trace = _get_trace()
+
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=100,
-            response_format={"type": "json_object"},
-        )
-        args = json.loads(response.choices[0].message.content)
-        return {k: v for k, v in args.items() if v is not None}
+        if trace:
+            obs_kwargs: Dict[str, Any] = {
+                "as_type": "generation",
+                "name": "extract_search_args",
+                "model": "gpt-4o-mini",
+                "input": {"prompt": prompt},
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                obs_kwargs["metadata"] = {"trace_id": trace_id}
+
+            with trace.start_as_current_observation(**obs_kwargs) as gen:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                    max_tokens=100,
+                    response_format={"type": "json_object"},
+                )
+                tokens = (
+                    response.usage.total_tokens
+                    if getattr(response, "usage", None)
+                    else 0
+                )
+                args = json.loads(response.choices[0].message.content)
+                cleaned = {k: v for k, v in args.items() if v is not None}
+
+                gen.update(
+                    output=cleaned,
+                    usage_details={"total_tokens": tokens},
+                )
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=100,
+                response_format={"type": "json_object"},
+            )
+            args = json.loads(response.choices[0].message.content)
+            cleaned = {k: v for k, v in args.items() if v is not None}
+
+        return cleaned
     except Exception:
         return {"keyword": state["user_message"]}
 
@@ -209,15 +330,50 @@ async def _extract_faq_keyword(client, state: AgentState) -> Dict[str, Any]:
 JSON으로 응답:
 {{"keyword": "검색 최적화된 문장"}}"""
 
+    trace = _get_trace()
+
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=80,
-            response_format={"type": "json_object"},
-        )
-        return json.loads(response.choices[0].message.content)
+        if trace:
+            obs_kwargs: Dict[str, Any] = {
+                "as_type": "generation",
+                "name": "extract_faq_keyword",
+                "model": "gpt-4o-mini",
+                "input": {"prompt": prompt},
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                obs_kwargs["metadata"] = {"trace_id": trace_id}
+
+            with trace.start_as_current_observation(**obs_kwargs) as gen:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                    max_tokens=80,
+                    response_format={"type": "json_object"},
+                )
+                tokens = (
+                    response.usage.total_tokens
+                    if getattr(response, "usage", None)
+                    else 0
+                )
+                payload = json.loads(response.choices[0].message.content)
+
+                gen.update(
+                    output=payload,
+                    usage_details={"total_tokens": tokens},
+                )
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+                max_tokens=80,
+                response_format={"type": "json_object"},
+            )
+            payload = json.loads(response.choices[0].message.content)
+
+        return payload
     except Exception:
         return {"keyword": state["user_message"]}
 
@@ -236,33 +392,71 @@ async def validator_node(state: AgentState) -> Dict[str, Any]:
     is_success = bool(tool_result.get("success"))
     has_data = bool(tool_result.get("data"))
 
-    if is_success and has_data:
-        return {
-            "is_valid": True,
+    trace = _get_trace()
+
+    def _result(payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not trace:
+            return payload
+
+        span_kwargs: Dict[str, Any] = {
+            "as_type": "span",
+            "name": "validator",
+            "input": {
+                "intent": intent,
+                "retry_count": retry_count,
+                "tool_result_success": is_success,
+                "has_data": has_data,
+            },
         }
+        trace_id = state.get("trace_id")
+        if trace_id:
+            span_kwargs["metadata"] = {"trace_id": trace_id}
+
+        try:
+            with trace.start_as_current_observation(**span_kwargs) as span:
+                span.update(output=payload)
+        except Exception:
+            return payload
+
+        return payload
+
+    if is_success and has_data:
+        return _result(
+            {
+                "is_valid": True,
+            }
+        )
 
     if retry_count >= 2:
-        return {
-            "is_valid": False,
-        }
+        return _result(
+            {
+                "is_valid": False,
+            }
+        )
 
     if intent == "search_lessons":
-        return {
-            "is_valid": False,
-            "retry_count": retry_count + 1,
-            "retry_strategy": "relax_filters",
-        }
+        return _result(
+            {
+                "is_valid": False,
+                "retry_count": retry_count + 1,
+                "retry_strategy": "relax_filters",
+            }
+        )
 
     if intent == "faq_inquiry":
-        return {
-            "is_valid": False,
-            "retry_count": retry_count + 1,
-            "retry_strategy": "broaden_keyword",
-        }
+        return _result(
+            {
+                "is_valid": False,
+                "retry_count": retry_count + 1,
+                "retry_strategy": "broaden_keyword",
+            }
+        )
 
-    return {
-        "is_valid": False,
-    }
+    return _result(
+        {
+            "is_valid": False,
+        }
+    )
 
 
 # ============================================================
@@ -301,16 +495,59 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
 
     messages.append({"role": "user", "content": user_content})
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            temperature=0.7,
-            max_tokens=1500,
-        )
+    trace = _get_trace()
 
-        content = response.choices[0].message.content or "죄송합니다. 응답 생성에 실패했습니다."
-        tokens = response.usage.total_tokens if getattr(response, "usage", None) else 0
+    try:
+        if trace:
+            obs_kwargs: Dict[str, Any] = {
+                "as_type": "generation",
+                "name": "response",
+                "model": "gpt-4o-mini",
+                "input": {"messages": messages},
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                obs_kwargs["metadata"] = {"trace_id": trace_id}
+
+            with trace.start_as_current_observation(**obs_kwargs) as gen:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1500,
+                )
+
+                content = (
+                    response.choices[0].message.content
+                    or "죄송합니다. 응답 생성에 실패했습니다."
+                )
+                tokens = (
+                    response.usage.total_tokens
+                    if getattr(response, "usage", None)
+                    else 0
+                )
+
+                gen.update(
+                    output=content,
+                    usage_details={"total_tokens": tokens},
+                )
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1500,
+            )
+
+            content = (
+                response.choices[0].message.content
+                or "죄송합니다. 응답 생성에 실패했습니다."
+            )
+            tokens = (
+                response.usage.total_tokens
+                if getattr(response, "usage", None)
+                else 0
+            )
 
         return {
             "response": content,

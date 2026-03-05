@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
-from typing import Any
+from typing import Any, Optional
 
 from app.models.lesson import Lesson, LessonStatus
 from app.models.enrollment import Enrollment
@@ -10,8 +10,10 @@ from app.services.recommendation_service import RecommendationService
 
 
 class ToolExecutor:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, trace_id: Optional[str] = None):
         self.db = db
+        # Langfuse 상에서의 trace/루트 span ID (있을 경우)
+        self.trace_id = trace_id
 
     async def execute(self, tool_name: str, arguments: dict) -> dict:
         """도구 실행"""
@@ -214,6 +216,7 @@ class ToolExecutor:
                 query=keyword,
                 top_k=5,
                 similarity_threshold=0.3,
+                trace_id=self.trace_id,
             )
 
             if rag_results:

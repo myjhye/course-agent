@@ -15,6 +15,7 @@ class AgentState(TypedDict):
     user_message: str                          # 사용자 원본 메시지
     student_name: Optional[str]                # 수강생 이름 (None이면 비로그인)
     chat_history: List[Dict[str, str]]         # 이전 대화 히스토리 [{role, content}, ...]
+    trace_id: Optional[str]                    # Langfuse 상에서의 trace/루트 span ID
 
     # ── Router 결과 ──
     intent: str                                # 분류된 의도

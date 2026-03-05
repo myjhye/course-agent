@@ -3,7 +3,9 @@ import time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from typing import List, Optional, Tuple
+
 from langgraph.graph import StateGraph, END
+
 from app.models.chat import ChatSession, ChatMessage
 from app.models.ai_log import AILog
 from app.services.ai.agent_state import AgentState
@@ -14,6 +16,7 @@ from app.services.ai.agent_nodes import (
     response_node,
 )
 from app.services.ai.agent_graph import should_use_tool, should_retry_or_respond
+from app.services.ai.langfuse_client import get_langfuse, flush_langfuse
 
 
 class ChatService:
@@ -170,7 +173,10 @@ class ChatService:
         )
         db.add(ai_log)
         await db.commit()
-        
+
+        # Langfuse 버퍼를 즉시 flush하여 관측 데이터 유실을 방지
+        flush_langfuse()
+
         return user_msg, assistant_msg
     
     @staticmethod
@@ -199,6 +205,7 @@ class ChatService:
             "user_message": user_message,
             "student_name": student_name,
             "chat_history": chat_history,
+            "trace_id": None,
             "intent": "",
             "tool_name": None,
             "tool_args": None,
@@ -240,7 +247,42 @@ class ChatService:
 
             compiled = graph.compile()
 
-            final_state: AgentState = await compiled.ainvoke(initial_state)
+            langfuse = get_langfuse()
+            root_span = None
+
+            if langfuse:
+                # LangGraph 전체 실행을 하나의 루트 span으로 감싼다.
+                with langfuse.start_as_current_observation(
+                    as_type="span",
+                    name="chat-agent",
+                    input={
+                        "user_message": user_message,
+                        "student_name": student_name,
+                    },
+                ) as span:
+                    root_span = span
+                    trace_id = getattr(span, "id", None)
+                    initial_state["trace_id"] = trace_id
+
+                    final_state: AgentState = await compiled.ainvoke(initial_state)
+
+                    tools_used = final_state.get("tools_used", []) or []
+
+                    span.update(
+                        output={
+                            "response": final_state.get(
+                                "response",
+                                "죄송합니다. 응답 생성에 실패했습니다.",
+                            ),
+                            "tools_used": tools_used,
+                        },
+                        metadata={
+                            "iteration_count": len(tools_used),
+                            "student_name": student_name,
+                        },
+                    )
+            else:
+                final_state = await compiled.ainvoke(initial_state)
 
             return (
                 final_state.get("tools_used", []),
@@ -254,6 +296,24 @@ class ChatService:
 
         except Exception as e:
             print(f"[LangGraph] Agent 실행 에러: {e}")
+
+            # Langfuse trace에 오류 정보 기록 (있을 경우에만)
+            try:
+                langfuse = get_langfuse()
+                if langfuse:
+                    with langfuse.start_as_current_observation(
+                        as_type="span",
+                        name="chat-agent-error",
+                        input={"user_message": user_message},
+                    ) as span:
+                        span.update(
+                            output=f"Error: {str(e)}",
+                            level="ERROR",
+                            status_message=str(e),
+                        )
+            except Exception:
+                pass
+
             return (
                 [],
                 {},
