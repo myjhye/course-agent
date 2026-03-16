@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 // 하드코딩된 사용자 이름
 const STUDENT_NAME = '홍길동';
 
+/** AI 상담 채팅 화면. SSE 스트리밍으로 단계 상태와 토큰을 실시간 표시한다. */
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -17,23 +18,28 @@ export default function ChatPage() {
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
+    // 첫 렌더 시 새로운 채팅 세션 ID를 생성한다
     setSessionId(uuidv4());
   }, []);
 
   useEffect(() => {
+    // 메시지가 변경될 때마다 스크롤을 최신 위치로 이동한다
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
 
+  /** 입력된 문장을 현재 세션으로 전송하고 SSE 스트림을 시작한다. */
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
+    // 공백을 제거한 실제 사용자 입력을 확정한다
     const userMessage = input.trim();
     setInput('');
     setLoading(true);
     setStatusText('');
 
+    // 사용자가 보낸 메시지를 즉시 채팅 목록에 추가한다
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
       session_id: sessionId,
@@ -46,6 +52,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     // AI 응답 placeholder 추가
+    // 스트리밍될 AI 응답을 위한 placeholder 메시지를 추가한다
     const tempAssistantMsg: ChatMessage = {
       id: Date.now() + 1,
       session_id: sessionId,
@@ -57,6 +64,7 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempAssistantMsg]);
 
+    // SSE 스트림을 시작하고 단계/토큰 이벤트에 따라 UI를 갱신한다
     const abort = chatApi.sendMessageStream(sessionId, userMessage, STUDENT_NAME, {
       onStatus: (data) => {
         const statusMap: Record<string, string> = {
@@ -68,6 +76,7 @@ export default function ChatPage() {
         setStatusText(statusMap[data.step] || data.message || '');
       },
       onToken: (data) => {
+        // 마지막 assistant 메시지에 토큰을 이어붙여 타이핑 효과를 만든다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -81,6 +90,7 @@ export default function ChatPage() {
         });
       },
       onDone: (data) => {
+        // 스트리밍이 끝나면 사용된 툴 정보를 메시지에 반영한다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -97,6 +107,7 @@ export default function ChatPage() {
       },
       onError: (error) => {
         console.error('Stream error:', error);
+        // 에러 시 비어 있는 assistant 메시지를 오류 안내 문구로 대체한다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -116,6 +127,7 @@ export default function ChatPage() {
     abortRef.current = abort;
   };
 
+  /** 엔터 키 입력을 가로채 단일 줄 전송 UX를 구현한다. */
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();

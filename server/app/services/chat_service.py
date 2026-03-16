@@ -130,6 +130,7 @@ class ChatService:
     ) -> Tuple[ChatMessage, ChatMessage]:
         """채팅 처리 메인"""
         
+        # 전체 채팅 처리 지연 시간을 측정하기 위해 시작 시각을 기록한다
         start_time = time.time()
         
         # 1. 세션 생성/조회
@@ -199,6 +200,7 @@ class ChatService:
         - {"event": "error", "data": {"message": "..."}}
         """
 
+        # 스트리밍 처리 지연 시간을 측정하기 위해 시작 시각을 기록한다
         start_time = time.time()
 
         try:
@@ -224,6 +226,7 @@ class ChatService:
             all_tool_results: dict = {}
             total_tokens: int = 0
 
+            # LangGraph 스트림에서 단계/토큰/최종 결과 이벤트를 순차적으로 소비한다
             async for event in ChatService._run_agent_graph_stream(
                 db,
                 user_message,

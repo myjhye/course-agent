@@ -61,12 +61,14 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
     trace = _get_trace()
 
     try:
+        # Router 프롬프트와 사용자 메시지를 조합해 LLM 입력을 구성한다
         messages = [
             {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
             {"role": "user", "content": state["user_message"]},
         ]
 
         if trace:
+            # Langfuse generation으로 의도 분류 호출 전체를 관측한다
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "router",
@@ -115,6 +117,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
             )
             result = json.loads(response.choices[0].message.content)
 
+        # 모델이 반환한 JSON에서 의도 문자열을 추출한다
         intent = result.get("intent", "general_inquiry")
 
         valid_intents = {
@@ -150,13 +153,14 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
     기존 ToolExecutor를 그대로 활용한다.
     """
 
+    # DB 세션과 trace_id를 가진 ToolExecutor 인스턴스를 생성한다
     executor = ToolExecutor(db, trace_id=state.get("trace_id"))
     client = get_openai_client()
     intent = state["intent"]
     student_name = state.get("student_name")
     retry_count = state.get("retry_count", 0)
 
-    # 의도별 Tool 매핑 + LLM으로 인자 추출
+    # 의도별로 사용할 툴과 LLM 기반 인자 추출 방식을 결정한다
     if intent == "search_lessons":
         tool_name = "search_lessons"
         tool_args = await _extract_search_args(client, state)
@@ -190,12 +194,14 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
 
     # student_name 자동 주입 (신뢰도 보강)
     if student_name and tool_name in ("get_my_enrollments", "get_recommendations"):
+        # 인증된 수강생 이름이 있을 때는 툴 인자에 자동으로 주입한다
         tool_args["student_name"] = student_name
 
     # Tool 실행 + Langfuse span 기록
     trace = _get_trace()
 
     if trace:
+        # Langfuse span으로 단일 툴 실행을 하나의 단계로 묶어 추적한다
         span_kwargs: Dict[str, Any] = {
             "as_type": "span",
             "name": "tool_executor",
@@ -231,7 +237,7 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
             print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
             tool_result = {"success": False, "error": str(e)}
 
-    # 사용한 Tool 기록
+    # 사용한 Tool 이름과 결과를 상태에 누적해 추후 로그/응답에 활용한다
     tools_used = list(state.get("tools_used", []))
     tools_used.append(tool_name)
 

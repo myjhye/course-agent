@@ -18,6 +18,7 @@ class ToolExecutor:
     async def execute(self, tool_name: str, arguments: dict) -> dict:
         """도구 실행"""
 
+        # 툴 이름에 따라 알맞은 내부 메서드를 선택해 실행한다
         if tool_name == "search_lessons":
             return await self._search_lessons(
                 keyword=arguments.get("keyword"),
@@ -56,6 +57,7 @@ class ToolExecutor:
         )
         
         if keyword:
+            # 제목 또는 종목명이 키워드를 포함하는 강습만 남긴다
             query = query.where(
                 or_(
                     Lesson.title.ilike(f"%{keyword}%"),
@@ -64,15 +66,19 @@ class ToolExecutor:
             )
         
         if sport_type:
+            # 명시된 종목에 해당하는 강습만 필터링한다
             query = query.where(Lesson.sport_type == sport_type)
         
         if difficulty:
+            # 난이도 기준으로 추가 필터링한다
             query = query.where(Lesson.difficulty == difficulty)
         
         if target_audience:
+            # 대상 연령대 기준으로 강습을 제한한다
             query = query.where(Lesson.target_audience == target_audience)
         
         query = query.limit(5)
+        # 조건이 적용된 강습 검색 쿼리를 실행한다
         result = await self.db.execute(query)
         lessons = list(result.scalars().all())
         
@@ -115,6 +121,7 @@ class ToolExecutor:
         if not lesson_id:
             return {"success": False, "error": "lesson_id required"}
         
+        # 수강생 이름으로 수강 내역을 조회한다
         result = await self.db.execute(
             select(Lesson)
             .options(selectinload(Lesson.instructor), selectinload(Lesson.contents))
@@ -178,6 +185,7 @@ class ToolExecutor:
             return {"success": False, "error": "student_name required"}
         
         try:
+            # 추천 서비스로부터 추천 강습 목록을 가져온다
             recommendations = await RecommendationService.get_recommendations(
                 self.db, student_name, limit=3
             )
@@ -211,6 +219,7 @@ class ToolExecutor:
         try:
             from app.services.ai.embedding_service import search_similar
 
+            # pgvector 기반 RAG 검색으로 FAQ/지식 문서를 찾는다
             rag_results = await search_similar(
                 db=self.db,
                 query=keyword,

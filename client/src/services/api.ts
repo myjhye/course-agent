@@ -12,6 +12,7 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+/** 백엔드 REST API 클라이언트 인스턴스. 공통 baseURL과 JSON 헤더를 설정한다. */
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -29,6 +30,7 @@ export interface PaginatedResponse<T> {
 }
 
 // ===== 강사 (운영자) =====
+/** 운영자용 강사 관리 API 래퍼. 강사 생성/조회/삭제 엔드포인트를 감싼다. */
 export const instructorApi = {
   getAll: () => api.get<Instructor[]>('/api/admin/instructors/'),
   getById: (id: number) => api.get<Instructor>(`/api/admin/instructors/${id}`),
@@ -38,6 +40,7 @@ export const instructorApi = {
 };
 
 // ===== 강습 (운영자) =====
+/** 운영자용 강습 관리 API. 강습 CRUD와 AI 콘텐츠 생성/발행을 호출한다. */
 export const adminLessonApi = {
   getAll: (params?: { page?: number; page_size?: number; status?: string }) =>
     api.get<PaginatedResponse<Lesson>>('/api/admin/lessons/', { params }),
@@ -69,6 +72,7 @@ export const adminLessonApi = {
 };
 
 // ===== 강습 (공개) =====
+/** 수강생이 보는 공개 강습 목록/상세 API. 조회/찜 관련 엔드포인트를 포함한다. */
 export const lessonApi = {
   getPublished: (params?: { page?: number; page_size?: number; sport_type?: string; target_audience?: string; difficulty?: string }) =>
     api.get<PaginatedResponse<Lesson>>('/api/lessons/', { params }),
@@ -100,6 +104,7 @@ export const lessonApi = {
 };
 
 // ===== 수강 (운영자) =====
+/** 운영자용 수강 관리 API. 수강 목록과 상태/출결 업데이트, 피드백 생성을 처리한다. */
 export const adminEnrollmentApi = {
   getAll: (params?: { page?: number; page_size?: number; status?: string; lesson_id?: number }) =>
     api.get<PaginatedResponse<EnrollmentDetail>>('/api/admin/enrollments/', { params }),
@@ -112,6 +117,7 @@ export const adminEnrollmentApi = {
 };
 
 // ===== 수강 (수강생) =====
+/** 수강생용 내 수강 API. 내 수강 목록 조회와 신청/취소를 담당한다. */
 export const myEnrollmentApi = {
   getAll: (studentName: string) =>
     api.get<EnrollmentDetail[]>('/api/my/enrollments/', { params: { student_name: studentName } }),
@@ -141,6 +147,7 @@ export interface RecommendationItem {
   reason_type: string;
 }
 
+/** 수강생용 개인화 추천 API. 카테고리별 추천 강습을 조회한다. */
 export const myRecommendationApi = {
   getCategorized: (studentName: string) =>
     api.get<CategorizedRecommendations>(`/api/my/recommendations/?student_name=${studentName}`),
@@ -194,6 +201,7 @@ export interface AILog {
   created_at: string;
 }
 
+/** 운영자용 대시보드 API. 통계와 AI 로그 목록을 조회한다. */
 export const adminDashboardApi = {
   getStats: (startDate?: string, endDate?: string) =>
     api.get<DashboardStats>('/api/admin/dashboard/', {
@@ -231,13 +239,16 @@ export interface ChatResponse {
   assistant_message: ChatMessage;
 }
 
+/** 채팅 기능 API. 동기/스트리밍 채팅 호출과 세션 관리를 제공한다. */
 export const chatApi = {
+  /** 단일 요청/응답 패턴으로 채팅 메시지를 전송한다. 스트리밍을 지원하지 않는 클라이언트용이다. */
   sendMessage: (sessionId: string, message: string, studentName?: string) =>
     api.post<ChatResponse>('/api/chat/', {
       session_id: sessionId,
       message,
       student_name: studentName
     }),
+  /** SSE 스트리밍으로 채팅 메시지를 전송한다. fetch + ReadableStream을 사용해 POST SSE를 구현한다. */
   sendMessageStream: (
     sessionId: string,
     message: string,
@@ -253,6 +264,7 @@ export const chatApi = {
 
     const baseUrl = api.defaults.baseURL || '';
 
+    // POST 요청으로 SSE 스트리밍 엔드포인트를 호출한다
     fetch(`${baseUrl}/api/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -269,26 +281,31 @@ export const chatApi = {
           return;
         }
 
+        // ReadableStream으로 SSE 청크를 순차적으로 읽는다
         const reader = response.body?.getReader();
         if (!reader) {
           callbacks.onError?.('ReadableStream not supported');
           return;
         }
 
+        // 바이너리 스트림을 UTF-8 문자열로 복원할 디코더와 버퍼를 준비한다
         const decoder = new TextDecoder();
         let buffer = '';
 
+        // 스트림이 끝날 때까지 청크를 읽고 SSE 이벤트로 파싱한다
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
 
+          // 줄바꿈 기준으로 분할하고 마지막 불완전한 줄은 버퍼에 남긴다
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
           let currentEvent = '';
 
+          // SSE 프로토콜을 파싱해 event / data 필드를 분리한다
           for (const line of lines) {
             if (line.startsWith('event:')) {
               currentEvent = line.slice(6).trim();
@@ -296,6 +313,7 @@ export const chatApi = {
               const dataStr = line.slice(5).trim();
               if (!dataStr) continue;
 
+              // data 라인의 JSON 페이로드를 파싱하고 콜백을 호출한다
               try {
                 const data = JSON.parse(dataStr);
 
