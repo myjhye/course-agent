@@ -264,7 +264,7 @@ export const chatApi = {
 
     const baseUrl = api.defaults.baseURL || '';
 
-    // POST 요청으로 SSE 스트리밍 엔드포인트를 호출한다
+    // 브라우저 기본 EventSource는 GET만 지원하므로, POST 바디를 보내기 위해 fetch로 SSE 연결을 연다
     fetch(`${baseUrl}/api/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -281,31 +281,29 @@ export const chatApi = {
           return;
         }
 
-        // ReadableStream으로 SSE 청크를 순차적으로 읽는다
         const reader = response.body?.getReader();
         if (!reader) {
           callbacks.onError?.('ReadableStream not supported');
           return;
         }
 
-        // 바이너리 스트림을 UTF-8 문자열로 복원할 디코더와 버퍼를 준비한다
         const decoder = new TextDecoder();
         let buffer = '';
 
-        // 스트림이 끝날 때까지 청크를 읽고 SSE 이벤트로 파싱한다
         while (true) {
+          // ReadableStream은 데이터가 도착할 때마다 청크를 반환하며, done=true면 서버가 스트림을 닫았다는 뜻이다
           const { done, value } = await reader.read();
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
 
-          // 줄바꿈 기준으로 분할하고 마지막 불완전한 줄은 버퍼에 남긴다
+          // SSE는 줄 단위("event:" / "data:")로 필드를 구분하므로 먼저 개행 기준으로 분리한다
+          // 네트워크 청크 경계에서 줄이 잘릴 수 있어, 마지막 불완전한 줄은 다음 청크와 합치기 위해 버퍼에 보존한다
           const lines = buffer.split('\n');
           buffer = lines.pop() || '';
 
           let currentEvent = '';
 
-          // SSE 프로토콜을 파싱해 event / data 필드를 분리한다
           for (const line of lines) {
             if (line.startsWith('event:')) {
               currentEvent = line.slice(6).trim();
@@ -313,7 +311,6 @@ export const chatApi = {
               const dataStr = line.slice(5).trim();
               if (!dataStr) continue;
 
-              // data 라인의 JSON 페이로드를 파싱하고 콜백을 호출한다
               try {
                 const data = JSON.parse(dataStr);
 

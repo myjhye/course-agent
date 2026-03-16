@@ -30,7 +30,6 @@ async def create_embedding(text_input: str, trace_id: Optional[str] = None) -> L
     client = get_embedding_client()
     trace = get_langfuse()
 
-    # OpenAI 임베딩 API를 실제로 호출하는 내부 함수
     async def _call() -> List[float]:
         response = await client.embeddings.create(
             model=EMBEDDING_MODEL,
@@ -38,7 +37,6 @@ async def create_embedding(text_input: str, trace_id: Optional[str] = None) -> L
         )
         return response.data[0].embedding
 
-    # Langfuse가 비활성화된 경우 관측 없이 바로 임베딩을 생성한다
     if not trace:
         return await _call()
 
@@ -52,7 +50,7 @@ async def create_embedding(text_input: str, trace_id: Optional[str] = None) -> L
         obs_kwargs["metadata"] = {"trace_id": trace_id}
 
     try:
-        # Langfuse generation 관측으로 임베딩 호출을 감싼다
+        # 임베딩 호출도 LLM과 동일한 관측 단위로 남겨, RAG 품질 이슈를 추적 가능하게 만든다
         with trace.start_as_current_observation(**obs_kwargs) as gen:
             embedding = await _call()
             gen.update(output={"vector_dim": len(embedding)})
@@ -83,17 +81,15 @@ async def search_similar(
     trace = get_langfuse()
 
     async def _run() -> List[Dict]:
-        # 1) 쿼리 텍스트를 임베딩 벡터로 변환한다
+        # 검색 쿼리를 동일한 모델로 임베딩해, 저장된 knowledge 임베딩과 같은 공간에서 비교한다
         query_embedding = await create_embedding(query, trace_id=trace_id)
 
-        # 2) pgvector 코사인 유사도 연산을 위한 벡터 문자열을 만든다
         embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
 
         where_clause = ""
         if source_type:
             where_clause = "AND source_type = :source_type"
 
-        # pgvector 인덱스를 활용해 코사인 유사도 순으로 청크를 검색한다
         sql = text(
             f"""
             SELECT

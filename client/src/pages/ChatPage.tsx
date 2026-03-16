@@ -18,12 +18,12 @@ export default function ChatPage() {
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    // 첫 렌더 시 새로운 채팅 세션 ID를 생성한다
+    // 페이지를 새로 열 때마다 세션 ID를 바꿔, 이전 대화와 현재 대화를 명확히 구분한다
     setSessionId(uuidv4());
   }, []);
 
   useEffect(() => {
-    // 메시지가 변경될 때마다 스크롤을 최신 위치로 이동한다
+    // 긴 대화에서도 항상 최신 메시지가 보이도록, 메시지가 추가될 때마다 맨 아래로 스크롤한다
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
@@ -33,13 +33,13 @@ export default function ChatPage() {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    // 공백을 제거한 실제 사용자 입력을 확정한다
+    // 공백만 전송되는 케이스를 막기 위해 입력을 trim한 후 사용한다
     const userMessage = input.trim();
     setInput('');
     setLoading(true);
     setStatusText('');
 
-    // 사용자가 보낸 메시지를 즉시 채팅 목록에 추가한다
+    // 백엔드 응답을 기다리지 않고도 사용자가 보낸 내용을 바로 보여주기 위해 낙관적으로 추가한다
     const tempUserMsg: ChatMessage = {
       id: Date.now(),
       session_id: sessionId,
@@ -51,8 +51,7 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
-    // AI 응답 placeholder 추가
-    // 스트리밍될 AI 응답을 위한 placeholder 메시지를 추가한다
+    // 스트리밍 응답을 한 메시지에 계속 이어 붙이기 위해, 비어 있는 assistant 버블을 미리 만들어 둔다
     const tempAssistantMsg: ChatMessage = {
       id: Date.now() + 1,
       session_id: sessionId,
@@ -64,7 +63,6 @@ export default function ChatPage() {
     };
     setMessages((prev) => [...prev, tempAssistantMsg]);
 
-    // SSE 스트림을 시작하고 단계/토큰 이벤트에 따라 UI를 갱신한다
     const abort = chatApi.sendMessageStream(sessionId, userMessage, STUDENT_NAME, {
       onStatus: (data) => {
         const statusMap: Record<string, string> = {
@@ -76,7 +74,7 @@ export default function ChatPage() {
         setStatusText(statusMap[data.step] || data.message || '');
       },
       onToken: (data) => {
-        // 마지막 assistant 메시지에 토큰을 이어붙여 타이핑 효과를 만든다
+        // ChatGPT 스타일 타이핑 효과를 위해, 서버가 보내는 토큰을 마지막 assistant 메시지에 순차적으로 붙인다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -90,7 +88,7 @@ export default function ChatPage() {
         });
       },
       onDone: (data) => {
-        // 스트리밍이 끝나면 사용된 툴 정보를 메시지에 반영한다
+        // 어떤 툴을 거쳐 생성된 답변인지 추적할 수 있도록, 완료 시 tool_used 정보를 최종 메시지에 기록한다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];
@@ -107,7 +105,7 @@ export default function ChatPage() {
       },
       onError: (error) => {
         console.error('Stream error:', error);
-        // 에러 시 비어 있는 assistant 메시지를 오류 안내 문구로 대체한다
+        // 빈 assistant 버블만 남는 UX를 피하기 위해, 에러가 나면 사용자에게 명시적으로 실패 메시지를 보여준다
         setMessages((prev) => {
           const updated = [...prev];
           const lastMsg = updated[updated.length - 1];

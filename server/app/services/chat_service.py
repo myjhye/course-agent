@@ -130,7 +130,7 @@ class ChatService:
     ) -> Tuple[ChatMessage, ChatMessage]:
         """채팅 처리 메인"""
         
-        # 전체 채팅 처리 지연 시간을 측정하기 위해 시작 시각을 기록한다
+        # 사용자 체감 성능과 장애 분석을 위해, 전체 채팅 처리 시간을 AI 로그에 남긴다
         start_time = time.time()
         
         # 1. 세션 생성/조회
@@ -177,7 +177,7 @@ class ChatService:
         db.add(ai_log)
         await db.commit()
 
-        # Langfuse 버퍼를 즉시 flush하여 관측 데이터 유실을 방지
+        # 프로세스가 짧게 끝나도 Langfuse 버퍼에 남지 않도록, 요청 단위로 강제 flush한다
         flush_langfuse()
 
         return user_msg, assistant_msg
@@ -200,7 +200,7 @@ class ChatService:
         - {"event": "error", "data": {"message": "..."}}
         """
 
-        # 스트리밍 처리 지연 시간을 측정하기 위해 시작 시각을 기록한다
+        # 스트리밍도 비스트리밍과 동일한 기준으로 모니터링하기 위해, 처리 시간을 별도로 측정한다
         start_time = time.time()
 
         try:
