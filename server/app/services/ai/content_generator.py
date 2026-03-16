@@ -15,7 +15,12 @@ class ContentGenerator:
     
     @staticmethod
     async def generate_full_content(db: AsyncSession, lesson: Lesson) -> LessonContent:
-        """전체 콘텐츠 생성 (소개 + 커리큘럼 + 썸네일)"""
+        """
+        전체 콘텐츠 생성 (소개 + 커리큘럼 + 썸네일).
+
+        강습 등록 시 사람이 일일이 작성하지 않고도, LLM을 통해 기본 소개/커리큘럼과
+        종목별 기본 썸네일을 한 번에 생성해 준다.
+        """
         
         start_time = time.time()
         
@@ -25,10 +30,10 @@ class ContentGenerator:
         # 2. 커리큘럼 생성
         curriculum = await ContentGenerator._generate_curriculum(lesson)
         
-        # 3. 종목별 기본 썸네일 적용
+        # 3. 종목별 기본 썸네일 적용 (이미지 생성 대신 안전한 정적 썸네일 사용)
         thumbnail_url = get_default_thumbnail(lesson.sport_type.value)
         
-        # 4. 버전 계산
+        # 4. 버전 계산: 이미 존재하는 콘텐츠가 있으면 가장 높은 버전 + 1
         result = await db.execute(
             select(LessonContent)
             .where(LessonContent.lesson_id == lesson.id)
@@ -37,7 +42,7 @@ class ContentGenerator:
         existing = result.scalars().first()
         new_version = (existing.version + 1) if existing else 1
         
-        # 5. 기존 콘텐츠 비활성화
+        # 5. 기존 콘텐츠 비활성화: 항상 하나의 활성 버전만 유지한다.
         if existing:
             all_contents = await db.execute(
                 select(LessonContent).where(LessonContent.lesson_id == lesson.id)
@@ -56,7 +61,7 @@ class ContentGenerator:
         )
         db.add(content)
         
-        # 7. AI 로그
+        # 7. AI 로그: 콘텐츠 버전 생성에 얼마나 걸렸는지 기록한다.
         latency_ms = (time.time() - start_time) * 1000
         ai_log = AILog(
             feature_type="content",
@@ -74,7 +79,11 @@ class ContentGenerator:
     
     @staticmethod
     async def regenerate_introduction(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
-        """소개 문구만 재생성"""
+        """
+        소개 문구만 재생성.
+
+        커리큘럼/썸네일은 유지하고 카피만 손보고 싶을 때 사용한다.
+        """
         
         result = await db.execute(
             select(LessonContent).where(LessonContent.id == content_id)
@@ -82,12 +91,13 @@ class ContentGenerator:
         content = result.scalar_one_or_none()
         
         if not content:
+            # 이미 삭제됐거나 존재하지 않는 콘텐츠 ID가 들어온 경우 즉시 오류를 던진다.
             raise ValueError("Content not found")
         
         introduction = await ContentGenerator._generate_introduction(lesson)
         content.introduction = introduction
         
-        # AI 로그
+        # AI 로그: 어떤 액션으로 어떤 길이의 소개가 생성됐는지 남겨둔다.
         ai_log = AILog(
             feature_type="content",
             lesson_id=lesson.id,
@@ -103,7 +113,11 @@ class ContentGenerator:
     
     @staticmethod
     async def regenerate_curriculum(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
-        """커리큘럼만 재생성"""
+        """
+        커리큘럼만 재생성.
+
+        소개/썸네일은 그대로 두고, 주차별 학습 계획만 다시 뽑고 싶을 때 사용한다.
+        """
         
         result = await db.execute(
             select(LessonContent).where(LessonContent.id == content_id)
@@ -116,7 +130,7 @@ class ContentGenerator:
         curriculum = await ContentGenerator._generate_curriculum(lesson)
         content.curriculum = curriculum
         
-        # AI 로그
+        # AI 로그: 생성된 weeks 개수를 남겨 난이도/주차 수 분포를 추후 분석할 수 있게 한다.
         ai_log = AILog(
             feature_type="content",
             lesson_id=lesson.id,
@@ -132,7 +146,12 @@ class ContentGenerator:
     
     @staticmethod
     async def _generate_introduction(lesson: Lesson) -> str:
-        """소개 문구 생성"""
+        """
+        소개 문구 생성.
+
+        강습 메타데이터(종목/대상/난이도/강사)를 한국어 라벨로 바꿔 LLM에 전달하고,
+        길이/톤/포맷을 프롬프트에서 명시해 일관된 카피를 만든다.
+        """
         
         client = get_openai_client()
         
@@ -146,7 +165,7 @@ class ContentGenerator:
             "beginner": "입문",
             "elementary": "초급",
             "intermediate": "중급",
-            "advanced": "고급"
+            "advanced": "고급",
         }
         sport_labels = {
             "swimming": "수영",
@@ -154,7 +173,7 @@ class ContentGenerator:
             "golf": "골프",
             "fitness": "피트니스",
             "yoga": "요가",
-            "pilates": "필라테스"
+            "pilates": "필라테스",
         }
         
         target = target_labels.get(lesson.target_audience.value, lesson.target_audience.value)
@@ -184,25 +203,31 @@ class ContentGenerator:
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=300,
-                temperature=0.7
+                temperature=0.7,
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
+            # LLM 호출 실패 시에도 강습 생성이 막히지 않도록 기본 문구로 폴백한다.
             print(f"소개 문구 생성 실패: {e}")
             return f"{lesson.title}에 오신 것을 환영합니다!"
     
     @staticmethod
     async def _generate_curriculum(lesson: Lesson) -> dict:
-        """커리큘럼 생성 (4~8주차)"""
+        """
+        커리큘럼 생성 (4~8주차).
+
+        난이도에 따라 기본 주차 수를 정하고, JSON 형식으로만 응답하도록 강하게 제한해
+        파싱 단계에서의 오류를 줄인다.
+        """
         
         client = get_openai_client()
         
-        # 난이도별 주차 수
+        # 난이도별 주차 수: 고급일수록 더 많은 주차를 제공한다.
         weeks_by_difficulty = {
             "beginner": 4,
             "elementary": 6,
             "intermediate": 8,
-            "advanced": 8
+            "advanced": 8,
         }
         num_weeks = weeks_by_difficulty.get(lesson.difficulty.value, 4)
         
@@ -210,7 +235,7 @@ class ContentGenerator:
             "adult": "성인",
             "child": "어린이",
             "senior": "시니어",
-            "all": "전체"
+            "all": "전체",
         }
         sport_labels = {
             "swimming": "수영",
@@ -218,7 +243,7 @@ class ContentGenerator:
             "golf": "골프",
             "fitness": "피트니스",
             "yoga": "요가",
-            "pilates": "필라테스"
+            "pilates": "필라테스",
         }
         
         target = target_labels.get(lesson.target_audience.value, lesson.target_audience.value)
@@ -267,7 +292,7 @@ class ContentGenerator:
             
             result_text = response.choices[0].message.content
             
-            # JSON 파싱
+            # JSON 파싱: 혹시 앞뒤에 설명이 붙더라도 가장 바깥 중괄호 기준으로 잘라낸다.
             start = result_text.find('{')
             end = result_text.rfind('}') + 1
             if start >= 0 and end > start:
@@ -287,5 +312,5 @@ class ContentGenerator:
 
 # 기존 함수들 호환성 유지
 async def generate_lesson_content(db, lesson) -> LessonContent:
-    """강습 콘텐츠 생성 (기존 호환성)"""
+    """강습 콘텐츠 생성 (기존 호환성). 신규 코드는 ContentGenerator를 직접 사용하는 것을 권장한다."""
     return await ContentGenerator.generate_full_content(db, lesson)

@@ -15,6 +15,7 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // 전송 중 페이지를 떠나거나 재전송 시 이전 스트림을 중단하기 위해 abort 함수를 보관한다.
   const abortRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -229,7 +230,7 @@ export default function ChatPage() {
                 </div>
               </div>
             ) : msg.content ? (
-              // AI Message
+              // AI Message: content가 있을 때만 말풍선을 그린다. 스트리밍 중 빈 assistant 메시지는 아래 Typing Indicator로 표시된다.
               <div className="flex items-start gap-4 max-w-3xl">
                 <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">
                   <span className="material-symbols-outlined text-primary text-[20px]">smart_toy</span>
@@ -262,7 +263,7 @@ export default function ChatPage() {
           </div>
         ))}
 
-        {/* Typing Indicator / Status */}
+        {/* Typing Indicator / Status: loading 중엔 status 이벤트(의도 분석/검색/답변 생성) 또는 점 애니메이션을 표시한다. */}
         {loading && (
           <div className="flex items-start gap-4">
             <div className="flex-none h-10 w-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-100">

@@ -1,3 +1,10 @@
+"""
+채팅 API 라우터.
+
+에이전트 기반 채팅(비스트리밍/스트리밍), 세션 목록·상세·삭제를 제공한다.
+실제 LLM/그래프 실행은 ChatService에 위임하고, 여기서는 HTTP/SSE 계층만 담당한다.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -21,7 +28,12 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 @router.post("/", response_model=ChatResponse)
 async def send_message(request: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """메시지 전송 및 AI 응답 (비스트리밍)"""
+    """
+    메시지 전송 및 AI 응답 (비스트리밍).
+
+    응답이 완료될 때까지 기다린 뒤 한 번에 반환한다.
+    스트리밍이 필요하면 POST /stream 을 사용한다.
+    """
     user_msg, assistant_msg = await ChatService.chat(
         db=db,
         session_id=request.session_id,
@@ -41,7 +53,12 @@ async def send_message_stream(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """SSE 스트리밍 채팅"""
+    """
+    SSE 스트리밍 채팅.
+
+    ChatService.chat_stream이 status/token/usage/result 이벤트를 yield하고,
+    EventSourceResponse가 이를 Server-Sent Events 프로토콜로 클라이언트에 전달한다.
+    """
 
     async def event_generator():
         async for event in ChatService.chat_stream(
@@ -61,14 +78,19 @@ async def send_message_stream(
 
 @router.get("/sessions", response_model=List[ChatSessionResponse])
 async def get_sessions(db: AsyncSession = Depends(get_db)):
-    """채팅 세션 목록"""
+    """채팅 세션 목록. 프론트에서 사이드바/목록에 표시할 세션 리스트를 반환한다."""
     sessions = await ChatService.get_sessions(db)
     return sessions
 
 
 @router.get("/sessions/{session_id}", response_model=ChatSessionDetailResponse)
 async def get_session_detail(session_id: str, db: AsyncSession = Depends(get_db)):
-    """세션 상세 (메시지 포함)"""
+    """
+    세션 상세 (메시지 포함).
+
+    세션 메타데이터와 해당 세션의 모든 메시지를 한 번에 가져와
+    채팅 화면을 복원할 때 사용한다.
+    """
     result = await db.execute(
         select(ChatSession).where(ChatSession.session_id == session_id)
     )
@@ -87,7 +109,12 @@ async def get_session_detail(session_id: str, db: AsyncSession = Depends(get_db)
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)):
-    """세션 삭제"""
+    """
+    세션 삭제.
+
+    메시지를 먼저 삭제한 뒤 세션을 삭제한다.
+    FK가 session_id를 참조할 수 있으므로, 자식(메시지)을 먼저 지워야 무결성이 유지된다.
+    """
     await db.execute(delete(ChatMessage).where(ChatMessage.session_id == session_id))
     await db.execute(delete(ChatSession).where(ChatSession.session_id == session_id))
     await db.commit()

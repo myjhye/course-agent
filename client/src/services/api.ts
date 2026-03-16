@@ -214,6 +214,8 @@ export const adminDashboardApi = {
 };
 
 // ===== 채팅 =====
+/** 백엔드 /api/chat/stream 은 POST + SSE로 동작한다. EventSource는 GET만 지원하므로 fetch + ReadableStream으로 파싱한다. */
+
 export interface ChatMessage {
   id: number;
   session_id: string;
@@ -313,7 +315,7 @@ export const chatApi = {
 
               try {
                 const data = JSON.parse(dataStr);
-
+                // 백엔드 chat_service가 보내는 event 타입과 1:1 매칭. status=단계 안내, token=스트리밍 텍스트, done=최종 메시지/툴 정보.
                 switch (currentEvent) {
                   case 'status':
                     callbacks.onStatus?.(data);
@@ -329,7 +331,7 @@ export const chatApi = {
                     break;
                 }
               } catch {
-                // ignore JSON parse errors
+                // 잘못된 JSON/빈 줄 등은 무시하고 스트림을 계속 읽는다.
               }
 
               currentEvent = '';

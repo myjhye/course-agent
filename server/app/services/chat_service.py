@@ -525,38 +525,68 @@ class ChatService:
         initial_state: AgentState,
         root_span,
     ) -> AsyncGenerator[dict, None]:
-        """실제 스트리밍 파이프라인 실행."""
+        """
+        LangGraph 파이프라인을 단계별로 직접 실행하면서 SSE로 스트리밍한다.
 
+        LangGraph의 `compiled.ainvoke()`를 그대로 쓰지 않는 이유:
+        - Response 노드 내부에서 OpenAI `stream=True`로 토큰을 흘려보내는데,
+          ainvoke는 노드가 완전히 끝나기 전까지 중간 토큰을 밖으로 내보낼 수 없다.
+        - 따라서 Router → ToolExecutor → Validator는 비스트리밍 단위로 수동 호출하고,
+          Response만 `AsyncGenerator`로 토큰을 받아서 SSE 이벤트로 중계한다.
+        """
+
+        # initial_state를 복사해 작업용 state로 쓴다.
+        # dict()로 얕은 복사를 하는 이유는, 여러 번 재사용될 수 있는 initial_state를
+        # 오염시키지 않고 이 실행 컨텍스트에 한정된 변경만 반영하기 위함이다.
         state: AgentState = dict(initial_state)
 
         # ── Phase 1: Router ──
+        # 먼저 프론트에 "의도 분석 중" 상태를 보내 사용자에게 진행 상황을 알린다.
         yield {
             "type": "status",
             "data": {"step": "router", "message": "의도 분석 중..."},
         }
+
+        # Router 노드에서 GPT-4o-mini가 사용자의 문장을 5가지 intent 중 하나로 분류한다.
+        # 예: {"intent": "faq_inquiry", "total_tokens": 85}
         router_result = await router_node(state)
+
+        # Router 결과를 state에 병합해, 이후 단계에서 intent와 total_tokens를 참고할 수 있게 한다.
         state.update(router_result)
 
         intent = state["intent"]
+
+        # 어떤 intent로 분류됐는지 프론트에 알려 준다.
+        # 이 정보는 UX(상태 표시)뿐 아니라 디버깅 시 "왜 이 툴을 탔는지"를 이해하는 데 도움이 된다.
         yield {
             "type": "status",
             "data": {"step": "router_done", "intent": intent},
         }
 
-        # ── Phase 2: Tool Execution (general_inquiry가 아닌 경우) ──
+        # ── Phase 2: Tool Execution ──
+        # general_inquiry(안녕하세요/감사 인사 등)는 비즈니스 툴 호출이 필요 없으므로
+        # 바로 Response 단계로 넘어가 토큰 사용량을 줄인다.
         if intent != "general_inquiry":
             yield {
                 "type": "status",
                 "data": {"step": "tool_executor", "message": "정보 검색 중..."},
             }
+
+            # ToolExecutor 노드는 intent에 맞는 도구(search_lessons, search_faq 등)를 선택하고 실행한다.
+            # 결과에는 tool_name, tool_args, tool_result, tools_used 등이 포함된다.
             tool_result = await tool_executor_node(state, db)
             state.update(tool_result)
 
             # ── Phase 3: Validator ──
+            # Validator 노드는 도구 실행 결과가 충분한지 검사하고,
+            # 필요하면 retry_count와 retry_strategy를 설정해 재시도 정책을 결정한다.
             validator_result = await validator_node(state)
             state.update(validator_result)
 
-            # Self-Correction 재시도
+            # Self-Correction: 검색 결과가 없을 때 필터를 완화해 자동 재검색한다.
+            # 예) "고급 배드민턴 강습" → 결과 없음 → difficulty 필터 제거 → 입문/초급 강습 제안.
+            # retry_count가 0이면 첫 시도가 성공한 것이므로 재시도하지 않고,
+            # 2회를 넘기면 더 이상 조건을 완화해도 품질이 떨어질 수 있어 중단한다.
             if (
                 not state["is_valid"]
                 and state["retry_count"] > 0
@@ -569,12 +599,16 @@ class ChatService:
                         "message": "조건 완화 재검색 중...",
                     },
                 }
+                # retry_strategy가 "relax_filters"인 경우, tool_executor_node 내부에서
+                # 난이도/타겟 필터를 제거하고 sport_type+키워드만으로 재검색하도록 동작한다.
                 tool_result = await tool_executor_node(state, db)
                 state.update(tool_result)
                 validator_result = await validator_node(state)
                 state.update(validator_result)
 
         # ── Phase 4: Response (스트리밍) ──
+        # 여기서부터 OpenAI `stream=True`를 통해 토큰을 하나씩 받아 프론트에 중계한다.
+        # 사용자는 "답변 생성 중..." 메시지 이후 글자가 한 글자씩 타이핑되는 경험을 하게 된다.
         yield {
             "type": "status",
             "data": {"step": "response", "message": "답변 생성 중..."},
@@ -583,20 +617,27 @@ class ChatService:
         response_tokens = 0
         full_response = ""
 
+        # response_node_stream은 OpenAI 스트리밍 응답을 래핑해
+        # {"type": "token", "content": "..."} / {"type": "usage", "total_tokens": N}
+        # 형태로 토큰과 사용량 정보를 전달한다.
         async for chunk in response_node_stream(state):
             if chunk["type"] == "token":
                 full_response += chunk["content"]
+                # 프론트의 onToken 콜백이 이 이벤트를 받아, 마지막 assistant 메시지에 문자열을 append한다.
                 yield {
                     "type": "token",
                     "data": {"content": chunk["content"]},
                 }
             elif chunk["type"] == "usage":
+                # OpenAI의 `stream_options={"include_usage": True}` 설정 덕분에
+                # 마지막 청크에서만 total_tokens 정보가 제공된다.
                 response_tokens = chunk.get("total_tokens", 0)
 
+        # 스트리밍이 끝난 시점의 최종 응답 텍스트와 토큰 수를 state에 반영한다.
         state["response"] = full_response
         state["total_tokens"] = state.get("total_tokens", 0) + response_tokens
 
-        # 루트 span에 최종 결과 업데이트
+        # Langfuse 루트 span이 존재하면, 최종 응답과 메타데이터를 업데이트해 Trace 뷰에서 볼 수 있게 한다.
         if root_span is not None:
             try:
                 tools_used = state.get("tools_used", []) or []
@@ -609,9 +650,11 @@ class ChatService:
                     },
                 )
             except Exception:
+                # 관측 시스템 장애가 사용자 응답 흐름에 영향을 주면 안 되므로, 예외는 조용히 무시한다.
                 pass
 
-        # 최종 결과
+        # 최종 결과 이벤트는 chat_stream()에서 수집되어
+        # DB에 assistant 메시지와 AILog를 저장하는 데 사용된다.
         yield {
             "type": "result",
             "data": {
