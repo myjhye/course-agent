@@ -2,7 +2,8 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    # RAG(pgvector) 마이그레이션 및 벡터 검색에 필요
+    image: pgvector/pgvector:pg17
     container_name: course-agent-db
     environment:
       POSTGRES_USER: postgres
