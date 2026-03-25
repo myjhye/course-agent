@@ -347,8 +347,12 @@ export const chatApi = {
 
     return () => abortController.abort();
   },
-  getSessions: () =>
-    api.get<ChatSession[]>('/api/chat/sessions'),
+  getSessions: async (): Promise<ChatSession[]> => {
+    // 최근 세션을 5개까지만 보여주기 위한 클라이언트 단 필터링.
+    // (백엔드가 전체를 반환해도 UX/렌더 부담을 줄이기 위함)
+    const res = await api.get<ChatSession[]>('/api/chat/sessions');
+    return res.data.slice(0, 5);
+  },
   getSessionDetail: (sessionId: string) =>
     api.get<{ session: ChatSession; messages: ChatMessage[] }>(`/api/chat/sessions/${sessionId}`),
   deleteSession: (sessionId: string) =>

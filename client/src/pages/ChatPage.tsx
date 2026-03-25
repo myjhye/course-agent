@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { chatApi } from '../services/api';
-import type { ChatMessage } from '../services/api';
+import type { ChatMessage, ChatSession } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
 
 // 하드코딩된 사용자 이름
@@ -11,6 +11,7 @@ const STUDENT_NAME = '홍길동';
 export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string>('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
@@ -21,6 +22,11 @@ export default function ChatPage() {
   useEffect(() => {
     // 페이지를 새로 열 때마다 세션 ID를 바꿔, 이전 대화와 현재 대화를 명확히 구분한다
     setSessionId(uuidv4());
+  }, []);
+
+  useEffect(() => {
+    // 페이지 진입 시 최근 세션 목록(최대 5개)을 가져온다.
+    chatApi.getSessions().then(setSessions).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -89,6 +95,9 @@ export default function ChatPage() {
         });
       },
       onDone: (data) => {
+        // 대화가 완료되면 최근 세션 목록을 갱신해서 좌측 탭이 최신 상태가 되게 한다.
+        chatApi.getSessions().then(setSessions).catch(console.error);
+
         // 어떤 툴을 거쳐 생성된 답변인지 추적할 수 있도록, 완료 시 tool_used 정보를 최종 메시지에 기록한다
         setMessages((prev) => {
           const updated = [...prev];
@@ -140,10 +149,73 @@ export default function ChatPage() {
     { icon: 'receipt_long', label: '환불 정책', query: '환불 어떻게 해요?' },
   ];
 
+  /** 새 대화 버튼 클릭 시: 스트림을 중단하고 세션/메시지를 초기화한다. */
+  const handleNewChat = () => {
+    abortRef.current?.();
+    abortRef.current = null;
+
+    setLoading(false);
+    setStatusText('');
+    setInput('');
+
+    setSessionId(uuidv4());
+    setMessages([]);
+  };
+
+  /** 세션 목록 클릭 시: 해당 세션의 메시지를 불러와 화면을 교체한다. */
+  const handleSelectSession = async (sid: string) => {
+    abortRef.current?.();
+    abortRef.current = null;
+
+    setLoading(false);
+    setStatusText('');
+    setInput('');
+
+    setSessionId(sid);
+
+    try {
+      const detail = await chatApi.getSessionDetail(sid);
+      setMessages(detail.data.messages);
+    } catch (e) {
+      console.error('Failed to load session detail:', e);
+      setMessages([]);
+    }
+  };
+
   return (
-    <div className="flex flex-col bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
-      {/* Chat Header */}
-      <header className="flex flex-none items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md px-6 py-4 z-10">
+    <div className="flex flex-row bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
+      {/* 좌측 세션 탭 (모바일에서는 숨김) */}
+      <aside className="hidden md:flex w-64 flex-none bg-white border-r border-slate-100 flex flex-col p-4 gap-2">
+        {/* 새 대화 버튼 */}
+        <button
+          onClick={handleNewChat}
+          className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-medium"
+        >
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          새 대화
+        </button>
+
+        {/* 세션 목록 */}
+        <div className="flex flex-col gap-1 mt-2">
+          {sessions.map((s) => (
+            <button
+              key={s.session_id}
+              onClick={() => handleSelectSession(s.session_id)}
+              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm truncate transition-colors ${
+                s.session_id === sessionId
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {s.title || '새 대화'}
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col">
+        {/* Chat Header */}
+        <header className="flex flex-none items-center justify-between border-b border-slate-100 bg-white/80 backdrop-blur-md px-6 py-4 z-10">
         <div className="flex items-center gap-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-purple-600 text-white shadow-md">
             <span className="material-symbols-outlined">smart_toy</span>
@@ -284,8 +356,8 @@ export default function ChatPage() {
         )}
       </main>
 
-      {/* Input Area */}
-      <div className="flex-none bg-white p-4 sm:p-6 border-t border-slate-100 z-10">
+        {/* Input Area */}
+        <div className="flex-none bg-white p-4 sm:p-6 border-t border-slate-100 z-10">
         <div className="relative flex items-end gap-3 max-w-4xl mx-auto">
           <div className="flex-1 relative">
             <textarea
@@ -309,6 +381,8 @@ export default function ChatPage() {
         <div className="text-center mt-3">
           <p className="text-[10px] text-slate-400">AI는 실수할 수 있습니다. 중요한 정보는 확인해 주세요.</p>
         </div>
+        </div>
+
       </div>
 
       {/* CSS for typing animation */}
