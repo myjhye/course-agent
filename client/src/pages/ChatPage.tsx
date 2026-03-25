@@ -185,7 +185,7 @@ export default function ChatPage() {
   return (
     <div className="flex flex-row bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
       {/* 좌측 세션 탭 (모바일에서는 숨김) */}
-      <aside className="hidden md:flex w-64 flex-none bg-white border-r border-slate-100 flex flex-col p-4 gap-2">
+      <aside className="hidden md:flex w-64 flex-none bg-white border-r border-slate-100 flex-col p-4 gap-2">
         {/* 새 대화 버튼 */}
         <button
           onClick={handleNewChat}
