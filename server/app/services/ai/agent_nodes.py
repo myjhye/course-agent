@@ -207,11 +207,6 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
             "tool_result": None,
         }
 
-    if student_name and tool_name in ("get_my_enrollments", "get_recommendations"):
-        # Router/LLM가 인자에서 student_name을 누락해도,
-        # 이미 인증된 세션이라면 도구 인자에 강제로 주입해 "내 수강 현황"이 항상 로그인 사용자 기준이 되게 한다.
-        tool_args["student_name"] = student_name
-
     trace = _get_trace()
 
     if trace:
