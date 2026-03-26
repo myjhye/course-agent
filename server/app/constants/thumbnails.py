@@ -5,7 +5,7 @@ DEFAULT_THUMBNAILS = {
     "fitness": "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&h=450&fit=crop",
     "yoga": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&h=450&fit=crop",
     "pilates": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&h=450&fit=crop",
-    "other": "https://images.unsplash.com/photo-1461896836934-bd45ba8f8e6f?w=800&h=450&fit=crop",
+    "other": "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=800&h=450&fit=crop",
 }
 
 
