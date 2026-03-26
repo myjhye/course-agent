@@ -495,13 +495,13 @@ async def validator_node(state: AgentState) -> Dict[str, Any]:
             }
         )
 
-    # FAQ 검색 실패 시: 키워드를 더 넓게 해석해 다시 RAG 검색하게 한다(추후 broaden_keyword 구현 시 활용).
+    # FAQ 검색 실패 시: 추가 재시도 없이 바로 Response로 넘어간다.
+    # 벡터 검색/RAG 결과가 없다는 사실을 사용자에게 정직하게 안내하는 편이
+    # 임의로 키워드를 바꿔 재검색하는 것보다 예측 가능하고 안전한 UX를 만든다.
     if intent == "faq_inquiry":
         return _result(
             {
                 "is_valid": False,
-                "retry_count": retry_count + 1,
-                "retry_strategy": "broaden_keyword",
             }
         )
 
