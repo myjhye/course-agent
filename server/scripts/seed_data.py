@@ -6,11 +6,14 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from sqlalchemy import delete
+
 from app.database import AsyncSessionLocal
 from app.models.instructor import Instructor
 from app.models.lesson import Lesson, SportType, TargetAudience, Difficulty, LessonStatus
 from app.models.lesson_content import LessonContent
 from app.models.enrollment import Enrollment, EnrollmentStatus
+from app.models.feedback import Feedback
 from app.models.lesson_interest import LessonView, LessonLike
 from app.models.faq import FAQ
 from app.constants.thumbnails import get_default_thumbnail
@@ -278,6 +281,18 @@ STUDENTS = ["홍길동", "김영희", "이철수", "박민지", "정다은", "�
 # ============================================================
 async def seed():
     async with AsyncSessionLocal() as db:
+        # 기존 시드 대상 테이블 비우기 (FK 순서: 자식 → 부모)
+        # Feedback은 enrollments.id를 참조하므로 Enrollment보다 먼저 삭제한다.
+        await db.execute(delete(Feedback))
+        await db.execute(delete(LessonView))
+        await db.execute(delete(LessonLike))
+        await db.execute(delete(Enrollment))
+        await db.execute(delete(LessonContent))
+        await db.execute(delete(Lesson))
+        await db.execute(delete(Instructor))
+        await db.execute(delete(FAQ))
+        await db.commit()
+
         # ──────────────────────────────────────────────
         # 1) 강사 시드
         # ──────────────────────────────────────────────
