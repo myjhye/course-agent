@@ -734,8 +734,8 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
                 delta = choice.delta if choice else None
 
                 if delta and delta.content:
-                    text = delta.content
-                    full_content += text
+                    text = delta.content    # "안", "녕", "하" 토큰 조각
+                    full_content += text    # 전체 텍스트에 누적
                     # 이 토큰을 chat_service가 SSE "token" 이벤트로 프론트에 보낸다.
                     yield {"type": "token", "content": text}
 
@@ -762,4 +762,3 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
             "type": "token",
             "content": "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
         }
-

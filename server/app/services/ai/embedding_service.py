@@ -41,37 +41,36 @@ async def create_embedding(text_input: str, trace_id: Optional[str] = None) -> L
     Langfuse가 활성화되어 있으면 호출 자체를 generation observation으로 남겨,
     RAG 품질 이슈를 추적할 때 어떤 텍스트를 어떻게 임베딩했는지 복기할 수 있게 한다.
     """
-    client = get_embedding_client()
-    trace = get_langfuse()
+    client = get_embedding_client() # OpenAI 클라이언트 가져옴 (싱글톤)
+    trace = get_langfuse()          # Langfuse 클라이언트 가져옴 (싱글톤)
 
     async def _call() -> List[float]:
-        response = await client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=text_input,
+        response = await client.embeddings.create(  # OpenAI 클라이언트를 통해 임베딩 호출
+            model=EMBEDDING_MODEL,  # "text-embedding-3-small" 모델 사용
+            input=text_input,       # "환불 정책" 같은 텍스트 입력
         )
-        return response.data[0].embedding
+        return response.data[0].embedding   # [0.12, 0.84, ...] 1536개 숫자 반환
 
     if not trace:
-        return await _call()
+        return await _call()    # Langfuse 없으면 그냥 임베딩만 실행하고 반환
 
+    # === Langfuse에 기록할 설정 만들기 ===
     obs_kwargs: Dict[str, Any] = {
-        "as_type": "generation",
-        "name": "embedding",
-        "model": EMBEDDING_MODEL,
-        "input": {"text": text_input},
+        "as_type": "generation",        # LLM 호출 타입으로 기록
+        "name": "embedding",            # Langfuse에서 보일 이름
+        "model": EMBEDDING_MODEL,       # 어떤 모델 썼는지
+        "input": {"text": text_input},  # 어떤 텍스트 임베딩했는지
     }
     if trace_id:
-        obs_kwargs["metadata"] = {"trace_id": trace_id}
+        obs_kwargs["metadata"] = {"trace_id": trace_id} # 어느 대화에서 호출됐는지
 
     try:
-        # 임베딩 호출도 LLM과 동일한 관측 단위로 남겨, RAG 품질 이슈를 추적 가능하게 만든다.
-        with trace.start_as_current_observation(**obs_kwargs) as gen:
-            embedding = await _call()
-            gen.update(output={"vector_dim": len(embedding)})
-            return embedding
+        with trace.start_as_current_observation(**obs_kwargs) as gen:   # Langfuse 관측 시작
+            embedding = await _call()   # 실제 임베딩 실행
+            gen.update(output={"vector_dim": len(embedding)})   # 결과 차원수(1536) 기록
+            return embedding    # 벡터 반환
     except Exception:
-        # 관측 실패 시, 임베딩 호출만 수행해 기능은 유지한다.
-        return await _call()
+        return await _call()   # Langfuse 오류나도 임베딩은 정상 실행
 
 
 async def search_similar(

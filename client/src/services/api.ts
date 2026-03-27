@@ -314,7 +314,7 @@ export const chatApi = {
               if (!dataStr) continue;
 
               try {
-                const data = JSON.parse(dataStr);
+                const data = JSON.parse(dataStr); // 문자열 → dict로 다시 변환
                 // 백엔드 chat_service가 보내는 event 타입과 1:1 매칭. status=단계 안내, token=스트리밍 텍스트, done=최종 메시지/툴 정보.
                 switch (currentEvent) {
                   case 'status':

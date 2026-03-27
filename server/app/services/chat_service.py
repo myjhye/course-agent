@@ -241,8 +241,8 @@ class ChatService:
                 elif event["type"] == "token":
                     full_response += event["data"]["content"]
                     yield {
-                        "event": "token",
-                        "data": json.dumps(event["data"], ensure_ascii=False),
+                        "event": "token",   # SSE 이벤트 이름
+                        "data": json.dumps(event["data"], ensure_ascii=False),  # JSON 문자열로 변환
                     }
                 elif event["type"] == "result":
                     tools_used = event["data"].get("tools_used", [])
