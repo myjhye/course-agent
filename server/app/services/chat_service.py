@@ -30,11 +30,13 @@ class ChatService:
         student_name: Optional[str] = None
     ) -> ChatSession:
         """세션 조회 또는 생성"""
+        # session_id로 기존 대화방 조회. 없으면 None 반환
         result = await db.execute(
             select(ChatSession).where(ChatSession.session_id == session_id)
         )
         session = result.scalar_one_or_none()
         
+        # 대화방 없으면 새로 생성 후 DB 저장
         if not session:
             session = ChatSession(
                 session_id=session_id,
@@ -42,7 +44,9 @@ class ChatService:
             )
             db.add(session)
             await db.commit()
+            # DB 자동 생성값(id, created_at) 다시 로드
             await db.refresh(session)
+        # 대화방은 있는데 이름 없으면 이름만 업데이트
         elif student_name and not session.student_name:
             session.student_name = student_name
             await db.commit()
@@ -59,6 +63,7 @@ class ChatService:
         tool_result: Optional[dict] = None
     ) -> ChatMessage:
         """메시지 저장"""
+        # ChatMessage 객체 생성 후 DB 저장
         message = ChatMessage(
             session_id=session_id,
             role=role,
@@ -68,6 +73,7 @@ class ChatService:
         )
         db.add(message)
         await db.commit()
+        # DB 자동 생성값(id, created_at) 다시 로드
         await db.refresh(message)
         return message
     
@@ -78,6 +84,7 @@ class ChatService:
         limit: int = 10
     ) -> List[ChatMessage]:
         """최근 메시지 조회"""
+        # 최신순으로 limit개 조회 (최신 N개를 빠르게 가져오기 위해 desc 정렬)
         result = await db.execute(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)
@@ -85,11 +92,13 @@ class ChatService:
             .limit(limit)
         )
         messages = list(result.scalars().all())
+        # GPT에 넘길 때 대화 순서가 맞아야 하므로 오래된순으로 뒤집기
         return list(reversed(messages))
     
     @staticmethod
     async def get_sessions(db: AsyncSession, limit: int = 20) -> List[ChatSession]:
         """세션 목록"""
+        # 최근 업데이트된 순으로 세션 목록 조회 (좌측 탭 대화 목록용)
         result = await db.execute(
             select(ChatSession)
             .order_by(desc(ChatSession.updated_at))
@@ -113,10 +122,13 @@ class ChatService:
     @staticmethod
     async def update_session_title(db: AsyncSession, session_id: str, title: str):
         """세션 제목 업데이트"""
+        # 세션 조회
         result = await db.execute(
             select(ChatSession).where(ChatSession.session_id == session_id)
         )
         session = result.scalar_one_or_none()
+        # 제목이 없을 때만 첫 메시지를 제목으로 저장 (50자 제한)
+        # 이미 제목 있으면 덮어쓰지 않음
         if session and not session.title:
             session.title = title[:50]
             await db.commit()
@@ -130,34 +142,34 @@ class ChatService:
     ) -> Tuple[ChatMessage, ChatMessage]:
         """채팅 처리 메인"""
         
-        # 사용자 체감 성능과 장애 분석을 위해, 전체 채팅 처리 시간을 AI 로그에 남긴다
+        # 전체 처리 시간 측정 시작 (AI 로그에 latency 기록용)
         start_time = time.time()
         
         # 1. 세션 생성/조회
         session = await ChatService.get_or_create_session(db, session_id, student_name)
         
-        # 2. 사용자 메시지 저장
+        # 2. 유저 메시지 DB 저장 (AI 실행 전에 먼저 저장 - 오류나도 유저 메시지는 보존)
         user_msg = await ChatService.save_message(db, session_id, "user", user_message)
         
-        # 3. 세션 제목 설정
+        # 3. 세션 제목이 없으면 첫 메시지로 설정
         await ChatService.update_session_title(db, session_id, user_message)
         
-        # 4. 대화 히스토리 조회
+        # 4. 이전 대화 10개 로드 (GPT 맥락 제공용)
         history = await ChatService.get_recent_messages(db, session_id, limit=10)
         
-        # 5. LangGraph 기반 Agent 실행 (멀티스텝)
+        # 5. LangGraph AI 파이프라인 실행 (비스트리밍 - 결과 한 번에 반환)
         tools_used, all_tool_results, assistant_content, tokens_used = await ChatService._run_agent_graph(
             db, user_message, history, student_name or session.student_name
         )
         
-        # 6. 어시스턴트 메시지 저장
+        # 6. AI 답변 DB 저장 (어떤 도구 썼는지, 도구 결과도 같이 저장)
         assistant_msg = await ChatService.save_message(
             db, session_id, "assistant", assistant_content,
             tool_used=",".join(tools_used) if tools_used else None,
             tool_result=all_tool_results if all_tool_results else None
         )
         
-        # 7. AI 로그 저장
+        # 7. AI 사용 로그 저장 (관리자 대시보드 모니터링용)
         latency_ms = (time.time() - start_time) * 1000
         ai_log = AILog(
             feature_type="chat",
@@ -180,6 +192,7 @@ class ChatService:
         # 프로세스가 짧게 끝나도 Langfuse 버퍼에 남지 않도록, 요청 단위로 강제 flush한다
         flush_langfuse()
 
+        # 유저 메시지 + AI 답변 반환
         return user_msg, assistant_msg
 
     @staticmethod
@@ -198,9 +211,10 @@ class ChatService:
         - {"event": "token", "data": {"content": "..."}}
         - {"event": "done", "data": {"tools_used": [...], ...}}
         - {"event": "error", "data": {"message": "..."}}
+        - {"event": "status", "data": {"step": "router_done", "intent": "..."}}
         """
 
-        # 스트리밍도 비스트리밍과 동일한 기준으로 모니터링하기 위해, 처리 시간을 별도로 측정한다
+        # 전체 처리 시간 측정 시작 (비스트리밍과 동일한 기준으로 모니터링하기 위함)
         start_time = time.time()
 
         try:
@@ -220,12 +234,13 @@ class ChatService:
                 db, session_id, limit=10
             )
 
-            # 5. LangGraph 스트리밍 실행
+            # 스트리밍 중 토큰을 누적할 변수들 초기화
             full_response = ""
             tools_used: List[str] = []
             all_tool_results: dict = {}
             total_tokens: int = 0
 
+            # 5. AI 파이프라인 실행 - 이벤트 타입별로 분기해서 브라우저로 전달
             # LangGraph 스트림에서 단계/토큰/최종 결과 이벤트를 순차적으로 소비한다
             async for event in ChatService._run_agent_graph_stream(
                 db,
@@ -234,24 +249,29 @@ class ChatService:
                 student_name or session.student_name,
             ):
                 if event["type"] == "status":
+                    # "의도 분석 중...", "정보 검색 중..." 등 단계 안내를 브라우저로 전송
                     yield {
                         "event": "status",
                         "data": json.dumps(event["data"], ensure_ascii=False),
                     }
                 elif event["type"] == "token":
+                    # 스트리밍 토큰 조각을 전체 텍스트에 누적 (마지막에 DB 저장용)
                     full_response += event["data"]["content"]
+                    # GPT 토큰 조각을 브라우저로 바로 전송 (타이핑 효과)
                     yield {
                         "event": "token",   # SSE 이벤트 이름
                         "data": json.dumps(event["data"], ensure_ascii=False),  # JSON 문자열로 변환
                     }
                 elif event["type"] == "result":
+                    # 브라우저로 보내지 않고 저장용으로만 수집
                     tools_used = event["data"].get("tools_used", [])
                     all_tool_results = event["data"].get("all_tool_results", {})
                     total_tokens = event["data"].get("total_tokens", 0)
                     if not full_response:
                         full_response = event["data"].get("response", "")
 
-            # 6. 어시스턴트 메시지 저장
+            # 6. 스트리밍 다 끝나고 나서 전체 응답 DB 저장
+            # (스트리밍 중간에 저장하면 텍스트가 잘리므로 반드시 끝나고 저장)
             assistant_msg = await ChatService.save_message(
                 db,
                 session_id,
@@ -261,7 +281,7 @@ class ChatService:
                 tool_result=all_tool_results if all_tool_results else None,
             )
 
-            # 7. AI 로그 저장
+            # 7. AI 사용 로그 저장
             latency_ms = (time.time() - start_time) * 1000
             ai_log = AILog(
                 feature_type="chat_stream",
@@ -279,10 +299,10 @@ class ChatService:
             db.add(ai_log)
             await db.commit()
 
-            # 8. Langfuse flush
+            # 8. Langfuse 버퍼 즉시 전송
             flush_langfuse()
 
-            # 9. 완료 이벤트
+            # 9. 스트리밍 완료 신호 전송 (프론트에서 로딩 상태 해제)
             yield {
                 "event": "done",
                 "data": json.dumps(
@@ -297,6 +317,7 @@ class ChatService:
 
         except Exception as e:
             print(f"[ChatStream] 에러: {e}")
+            # 예외 발생 시 에러 이벤트 전송 (빈 화면 방지)
             yield {
                 "event": "error",
                 "data": json.dumps({"message": str(e)}, ensure_ascii=False),
@@ -310,7 +331,9 @@ class ChatService:
         student_name: Optional[str]
     ) -> Tuple[List[str], dict, str, Optional[int]]:
         """
-        LangGraph 기반 Agent 실행.
+        비스트리밍 채팅 전용 LangGraph Agent 실행.
+        chat()에서만 호출되며, compiled.ainvoke()로 결과를 한 번에 반환한다.
+        스트리밍 경로는 _run_agent_graph_stream()을 사용한다.
 
         Returns:
             - tools_used: 사용된 도구 목록
@@ -319,11 +342,13 @@ class ChatService:
             - tokens_used: 총 토큰 사용량
         """
 
+        # history[:-1]: 마지막 항목은 방금 저장한 유저 메시지라 제외
         chat_history = [
             {"role": msg.role, "content": msg.content}
             for msg in history[:-1]
         ]
 
+        # AgentState 초기값 세팅 - 모든 노드가 공유하는 상태 객체
         initial_state: AgentState = {
             "user_message": user_message,
             "student_name": student_name,
@@ -347,6 +372,8 @@ class ChatService:
             async def tool_executor_with_db(state: AgentState):
                 return await tool_executor_node(state, db)
 
+            # tool_executor_node가 현재 요청의 db 세션을 클로저로 캡처해야 하므로
+            # 그래프를 전역 싱글톤으로 재사용하지 않고 요청마다 새로 조립한다.
             graph = StateGraph(AgentState)
             graph.add_node("router", router_node)
             graph.add_node("tool_executor", tool_executor_with_db)
@@ -368,7 +395,7 @@ class ChatService:
             )
             graph.add_edge("response", END)
 
-            compiled = graph.compile()
+            compiled = graph.compile()  # 실행 가능한 그래프로 컴파일
 
             langfuse = get_langfuse()
             root_span = None
@@ -385,8 +412,10 @@ class ChatService:
                 ) as span:
                     root_span = span
                     trace_id = getattr(span, "id", None)
+                    # 노드들이 같은 trace에 묶이도록 trace_id를 state에 주입
                     initial_state["trace_id"] = trace_id
 
+                    # 비스트리밍: 모든 노드 실행 완료 후 최종 state 한 번에 반환
                     final_state: AgentState = await compiled.ainvoke(initial_state)
 
                     tools_used = final_state.get("tools_used", []) or []
@@ -407,6 +436,7 @@ class ChatService:
             else:
                 final_state = await compiled.ainvoke(initial_state)
 
+            # 최종 state에서 필요한 값만 꺼내서 반환
             return (
                 final_state.get("tools_used", []),
                 final_state.get("all_tool_results", {}),
@@ -452,16 +482,16 @@ class ChatService:
         student_name: Optional[str],
     ) -> AsyncGenerator[dict, None]:
         """
-        LangGraph를 실행하되, Response 노드에서 토큰을 스트리밍한다.
-
-        Router → ToolExecutor → Validator 까지는 기존과 동일하게 실행하고,
-        Response 노드에서만 OpenAI streaming을 사용하여 토큰을 yield한다.
+        Langfuse 루트 span을 열고 _run_agent_graph_stream_inner를 실행한다.
+        전체 AI 파이프라인을 하나의 span으로 묶어 Langfuse에서 end-to-end 추적이 가능하게 한다.
         """
 
+        # history[:-1]: 방금 저장한 유저 메시지 제외
         chat_history = [
             {"role": msg.role, "content": msg.content} for msg in history[:-1]
         ]
 
+        # AgentState 초기값 세팅 (_run_agent_graph와 동일)
         initial_state: AgentState = {
             "user_message": user_message,
             "student_name": student_name,
@@ -495,13 +525,16 @@ class ChatService:
                     },
                 ) as span:
                     trace_id = getattr(span, "id", None)
+                    # 노드들이 같은 trace에 묶이도록 trace_id를 state에 주입
                     initial_state["trace_id"] = trace_id
 
+                    # 실제 실행은 _run_agent_graph_stream_inner에 위임, 결과 그대로 올림
                     async for item in ChatService._run_agent_graph_stream_inner(
                         db, initial_state, span
                     ):
                         yield item
             else:
+                # Langfuse 없으면 바로 실행
                 async for item in ChatService._run_agent_graph_stream_inner(
                     db, initial_state, None
                 ):
@@ -509,6 +542,7 @@ class ChatService:
 
         except Exception as e:
             print(f"[LangGraph Stream] 에러: {e}")
+            # 에러 발생 시 result 타입으로 fallback 응답 반환
             yield {
                 "type": "result",
                 "data": {
@@ -527,12 +561,8 @@ class ChatService:
     ) -> AsyncGenerator[dict, None]:
         """
         LangGraph 파이프라인을 단계별로 직접 실행하면서 SSE로 스트리밍한다.
-
-        LangGraph의 `compiled.ainvoke()`를 그대로 쓰지 않는 이유:
-        - Response 노드 내부에서 OpenAI `stream=True`로 토큰을 흘려보내는데,
-          ainvoke는 노드가 완전히 끝나기 전까지 중간 토큰을 밖으로 내보낼 수 없다.
-        - 따라서 Router → ToolExecutor → Validator는 비스트리밍 단위로 수동 호출하고,
-          Response만 `AsyncGenerator`로 토큰을 받아서 SSE 이벤트로 중계한다.
+        Router → ToolExecutor → Validator는 비스트리밍으로 실행하고,
+        Response만 stream=True로 토큰을 yield한다.
         """
 
         # initial_state를 복사해 작업용 state로 쓴다.
