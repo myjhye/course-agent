@@ -15,12 +15,7 @@ from app.services.ai.langfuse_client import get_langfuse
 
 
 def _get_trace():
-    """
-    Langfuse 클라이언트를 반환한다.
-
-    - 설정이 없으면 None
-    - 각 노드는 state["trace_id"]를 metadata로만 활용한다.
-    """
+    """Langfuse 클라이언트 반환. 설정 없으면 None."""
     return get_langfuse()
 
 
@@ -62,10 +57,11 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
     Langfuse generation으로 별도 관측을 남겨 나중에 "왜 이 의도로 갔는지"를 추적할 수 있게 한다.
     """
 
-    client = get_openai_client()
-    trace = _get_trace()
+    client = get_openai_client()  # OpenAI 클라이언트 가져오기
+    trace = _get_trace()  # Langfuse 클라이언트 가져오기 (없으면 None)
 
     try:
+        # GPT에 보낼 메시지 구성 (시스템 프롬프트 + 유저 메시지)
         messages = [
             {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
             {"role": "user", "content": state["user_message"]},
@@ -90,8 +86,8 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
-                    temperature=0,
-                    max_tokens=50,
+                    temperature=0,  # 의도 분류는 창의성 없이 일관되게
+                    max_tokens=50,  # {"intent": "..."} 짧은 JSON만 받으면 됨
                     response_format={"type": "json_object"},
                 )
 
@@ -100,7 +96,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
                     if getattr(response, "usage", None)
                     else 0
                 )
-                result = json.loads(response.choices[0].message.content)
+                result = json.loads(response.choices[0].message.content)  # JSON 파싱
 
                 gen.update(
                     output=result,
@@ -110,8 +106,8 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
-                temperature=0,
-                max_tokens=50,
+                temperature=0,  # 의도 분류는 창의성 없이 일관되게
+                max_tokens=50,  # {"intent": "..."} 짧은 JSON만 받으면 됨
                 response_format={"type": "json_object"},
             )
             tokens = (
@@ -119,7 +115,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
                 if getattr(response, "usage", None)
                 else 0
             )
-            result = json.loads(response.choices[0].message.content)
+            result = json.loads(response.choices[0].message.content)  # JSON 파싱
 
         # LLM이 JSON으로 반환한 payload에서 의도 문자열만 꺼낸다.
         # 혹시라도 스키마가 깨지거나 키가 없을 경우를 대비해 general_inquiry로 폴백한다.
@@ -139,10 +135,11 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
 
         return {
             "intent": intent,
-            "total_tokens": state.get("total_tokens", 0) + tokens,
+            "total_tokens": state.get("total_tokens", 0) + tokens,  # 토큰 누적
         }
 
     except Exception as e:
+        # GPT 호출 실패 시 general_inquiry로 폴백해 파이프라인이 멈추지 않게 함
         print(f"[Router] 에러: {e}")
         return {
             "intent": "general_inquiry",
@@ -163,8 +160,8 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
     - 재시도 전략(retry_strategy)에 따라 인자를 어떻게 완화/변형하는지도 한 곳에서 제어할 수 있다.
     """
 
-    # ToolExecutor에 trace_id를 넘겨두면, 내부에서 호출하는 RAG/DB 로직이
-    # 같은 Langfuse Trace 아래에 묶여 end-to-end 호출 경로를 재현할 수 있다.
+    # ToolExecutor 인스턴스 생성 (DB 세션 + trace_id 주입)
+    # trace_id를 넘겨야 RAG 검색도 같은 Langfuse Trace에 묶임
     executor = ToolExecutor(db, trace_id=state.get("trace_id"))
     client = get_openai_client()
     intent = state["intent"]
@@ -174,12 +171,14 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
     # intent마다 전혀 다른 도구와 인자 스키마를 사용하므로, 여기서 명시적으로 분기해준다.
     if intent == "search_lessons":
         tool_name = "search_lessons"
+        # search_lessons: 자연어 → 구조화된 검색 조건 추출 후 도구 실행
         tool_args = await _extract_search_args(client, state)
 
         # 재시도 시 필터 완화:
         # 첫 시도에서 조건을 너무 빡세게 걸어 결과가 없으면, difficulty/target_audience를 풀어
         # "아무 강습도 못 찾았다" 보다는 "조건을 조금 완화한 대안"을 제시하는 것이 UX 상 낫기 때문이다.
         if retry_count > 0 and state.get("retry_strategy") == "relax_filters":
+            # 재시도 시 difficulty/target_audience 제거해 더 넓게 검색
             tool_args = {
                 "sport_type": tool_args.get("sport_type"),
                 "keyword": tool_args.get("keyword"),
@@ -187,17 +186,21 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
 
     elif intent == "get_recommendations":
         tool_name = "get_recommendations"
+        # get_recommendations: 세션의 student_name으로 바로 추천 조회
         tool_args = {"student_name": student_name}
 
     elif intent == "manage_enrollment":
         tool_name = "get_my_enrollments"
+        # manage_enrollment: 세션의 student_name으로 수강 현황 조회
         tool_args = {"student_name": student_name}
 
     elif intent == "faq_inquiry":
         tool_name = "search_faq"
+        # faq_inquiry: 핵심 키워드 추출 후 RAG 검색
         tool_args = await _extract_faq_keyword(client, state)
 
     else:
+        # general_inquiry: 도구 불필요, 빈 값으로 반환해 Response로 바로 이동
         # general_inquiry — Tool 실행 불필요:
         # 간단한 인사/감사/잡담에는 DB/RAG를 호출하지 않고 곧바로 Response 노드에서 답을 생성해
         # 토큰과 레이턴시를 모두 절감한다.
@@ -229,6 +232,7 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
             # Langfuse 관측이 활성화된 경우: 툴 실행 전체를 하나의 span으로 감싸고 결과를 output에 기록한다.
             with trace.start_as_current_observation(**span_kwargs) as span:
                 try:
+                    # 실제 도구 실행 (Langfuse span으로 감싸서 실행 시간/결과 기록)
                     tool_result = await executor.execute(tool_name, tool_args)
                 except Exception as e:
                     print(f"[ToolExecutor] {tool_name} 실행 에러: {e}")
@@ -251,11 +255,13 @@ async def tool_executor_node(state: AgentState, db) -> Dict[str, Any]:
             tool_result = {"success": False, "error": str(e)}
 
     # 한 번의 채팅에서 어떤 도구들이 몇 번 호출됐는지 추후 분석/로그를 위해 누적한다.
+    # 이번 대화에서 호출된 도구 목록 누적 (should_retry_or_respond의 무한루프 방지에 사용)
     tools_used = list(state.get("tools_used", []))
     tools_used.append(tool_name)
 
     # iteration 별 툴 결과를 키(`tool_name_1`, `tool_name_2`) 형식으로 저장해,
     # "첫 검색 vs 재검색" 결과를 Langfuse/대시보드에서 비교 분석하기 쉽게 한다.
+    # 재시도별 결과를 search_lessons_1, search_lessons_2 형태로 저장
     all_tool_results = dict(state.get("all_tool_results", {}))
     iteration = retry_count + 1
     all_tool_results[f"{tool_name}_{iteration}"] = tool_result
@@ -490,9 +496,7 @@ async def validator_node(state: AgentState) -> Dict[str, Any]:
             }
         )
 
-    # FAQ 검색 실패 시: 추가 재시도 없이 바로 Response로 넘어간다.
-    # 벡터 검색/RAG 결과가 없다는 사실을 사용자에게 정직하게 안내하는 편이
-    # 임의로 키워드를 바꿔 재검색하는 것보다 예측 가능하고 안전한 UX를 만든다.
+    # FAQ는 벡터+ILIKE 두 단계로 이미 검색했으므로 재시도 없이 바로 Response로 넘긴다.
     if intent == "faq_inquiry":
         return _result(
             {
