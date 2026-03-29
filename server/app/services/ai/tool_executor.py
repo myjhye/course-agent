@@ -13,6 +13,18 @@ class ToolExecutor:
     """
     LangGraph 에이전트가 사용할 실제 비즈니스 도구들을 모아 둔 실행기.
 
+    tool_executor_node(agent_nodes.py)가 컨트롤러 역할이라면,
+    이 클래스는 실제 DB/RAG 작업을 수행하는 서비스 레이어다.
+
+    직접 처리:
+    - _search_lessons()      -> 강습 DB 쿼리
+    - _get_lesson_detail()   -> 강습 상세 DB 쿼리
+    - _get_my_enrollments()  -> 수강 현황 DB 쿼리
+    - _search_faq()          -> RAG 벡터 검색 + ILIKE 폴백
+
+    외부 서비스 위임:
+    - _get_recommendations() -> RecommendationService (추천 알고리즘이 복잡해 별도 분리)
+
     Router/노드 쪽에서는 \"도구 이름 + 인자\"만 넘기고, DB 세션에 직접 접근하지 않는다.
     이렇게 분리해 두면:
     - 에이전트 로직(프롬프트/재시도)과 DB/쿼리 구현을 느슨하게 결합할 수 있고
@@ -20,10 +32,8 @@ class ToolExecutor:
     """
 
     def __init__(self, db: AsyncSession, trace_id: Optional[str] = None):
-        # LangGraph에서 전달된 요청 범위 DB 세션을 보관한다.
-        self.db = db
-        # Langfuse 상에서의 trace/루트 span ID (있을 경우). RAG 검색 시 embedding_service에 그대로 전달한다.
-        self.trace_id = trace_id
+        self.db = db  # 요청 범위 DB 세션 보관 (요청 끝나면 자동 닫힘)
+        self.trace_id = trace_id  # Langfuse trace ID — RAG 검색 시 같은 Trace에 묶이도록 전달
 
     async def execute(self, tool_name: str, arguments: dict) -> dict:
         """
@@ -32,29 +42,27 @@ class ToolExecutor:
         LangGraph 쪽에서는 이 메서드만 알면 되고, 개별 도구 구현 상세는 숨긴다.
         반환 형식은 {\"success\", \"data\", ...}로 통일해 Validator/Response 노드가 일관되게 처리할 수 있게 한다.
         """
-
         if tool_name == "search_lessons":
             return await self._search_lessons(
-                keyword=arguments.get("keyword"),
-                sport_type=arguments.get("sport_type"),
-                difficulty=arguments.get("difficulty"),
-                target_audience=arguments.get("target_audience"),
+                keyword=arguments.get("keyword"),  # 텍스트 검색 키워드
+                sport_type=arguments.get("sport_type"),  # 종목 (swimming, tennis 등)
+                difficulty=arguments.get("difficulty"),  # 난이도 (beginner, intermediate 등)
+                target_audience=arguments.get("target_audience"),  # 대상 (adult, child 등)
             )
 
         elif tool_name == "get_lesson_detail":
-            return await self._get_lesson_detail(arguments.get("lesson_id"))
+            return await self._get_lesson_detail(arguments.get("lesson_id"))  # 강습 ID로 상세 조회
 
         elif tool_name == "get_my_enrollments":
-            return await self._get_my_enrollments(arguments.get("student_name"))
+            return await self._get_my_enrollments(arguments.get("student_name"))  # 수강생 이름으로 조회
 
         elif tool_name == "get_recommendations":
-            return await self._get_recommendations(arguments.get("student_name"))
+            return await self._get_recommendations(arguments.get("student_name"))  # 수강생 이름으로 추천
 
         elif tool_name == "search_faq":
-            return await self._search_faq(arguments.get("keyword"))
+            return await self._search_faq(arguments.get("keyword"))  # 키워드로 FAQ 검색
 
-        # 정의되지 않은 도구 이름이 들어오면 명시적으로 실패 응답을 주어, LLM이 잘못된 tool_name을
-        # 생성했을 때도 디버깅이 쉽도록 한다.
+        # 정의되지 않은 tool_name → 에러 반환 (디버깅용)
         return {"success": False, "error": "Unknown tool"}
 
     async def _search_lessons(
@@ -104,8 +112,7 @@ class ToolExecutor:
         lessons = list(result.scalars().all())
 
         if not lessons:
-            # 결과 없음도 명시적으로 success=False + data=[]로 표현해 Validator/Response가
-            # \"검색 결과 없음\" 분기를 태울 수 있게 한다.
+            # Validator가 재시도(relax_filters) 또는 포기 결정. filters는 Response가 사용자에게 조건 설명에 사용.
             return {
                 "success": False,
                 "data": [],
@@ -123,7 +130,7 @@ class ToolExecutor:
                 {
                     "id": l.id,
                     "title": l.title,
-                    "sport_type": l.sport_type.value,
+                    "sport_type": l.sport_type.value,  # enum → 문자열
                     "difficulty": l.difficulty.value,
                     "target_audience": l.target_audience.value,
                     "instructor_name": l.instructor.name if l.instructor else None,
@@ -184,18 +191,18 @@ class ToolExecutor:
         """
 
         if not student_name:
-            # 누가 물어봤는지 없으면 수강 현황을 찾을 수 없으므로 실패 처리.
             return {"success": False, "error": "student_name required"}
 
+        # 상태 필터 없음 — 완료/진행 중 등 전체 수강 이력
         result = await self.db.execute(
             select(Enrollment)
-            .options(selectinload(Enrollment.lesson))
+            .options(selectinload(Enrollment.lesson))  # 강습 정보 함께 로드
             .where(Enrollment.student_name == student_name)
         )
         enrollments = list(result.scalars().all())
 
         if not enrollments:
-            # 수강 내역이 없는 것도 data=[]로 명시해, Response 쪽에서 \"아직 수강 이력이 없습니다\"라고 안내할 수 있게 한다.
+            # Response에서 \"아직 수강 이력이 없습니다\" 등 안내
             return {"success": False, "data": [], "student_name": student_name}
 
         return {
@@ -204,8 +211,8 @@ class ToolExecutor:
                 {
                     "id": e.id,
                     "lesson_title": e.lesson.title if e.lesson else "알 수 없음",
-                    "status": e.status.value,
-                    "attendance_rate": e.attendance_rate or 0,
+                    "status": e.status.value,  # enrolled / in_progress / completed / cancelled
+                    "attendance_rate": e.attendance_rate or 0,  # 없으면 0
                 }
                 for e in enrollments
             ],
@@ -224,6 +231,7 @@ class ToolExecutor:
             return {"success": False, "error": "student_name required"}
 
         try:
+            # 수강 이력·출석·조회 등은 RecommendationService 내부에서 처리 (limit=3)
             recommendations = await RecommendationService.get_recommendations(
                 self.db, student_name, limit=3
             )
@@ -238,14 +246,14 @@ class ToolExecutor:
                         "lesson_title": r["lesson"]["title"],
                         "sport_type": r["lesson"]["sport_type"],
                         "difficulty": r["lesson"]["difficulty"],
-                        "reason": r["reason"],
+                        "reason": r["reason"],  # 개인화 추천 이유
                     }
                     for r in recommendations
                 ],
                 "student_name": student_name,
             }
         except Exception as e:
-            # 추천 로직 내부 예외가 UI 전체를 깨지 않도록, 에러 메시지만 담아 실패 응답으로 넘긴다.
+            # 추천 실패해도 다른 기능에 영향 없도록 에러만 반환
             return {"success": False, "error": str(e)}
     
     async def _search_faq(self, keyword: str) -> dict:
@@ -259,18 +267,17 @@ class ToolExecutor:
         if not keyword:
             return {"success": False, "data": [], "keyword": ""}
 
-        # RAG 벡터 검색 + ILIKE 폴백
         try:
-            # 순환 의존을 피하기 위해 함수 내부에서 import 한다.
+            # 순환 의존 방지를 위해 함수 내부에서 import
             from app.services.ai.embedding_service import search_similar
 
-            # pgvector 기반 RAG 검색으로 FAQ/지식 문서를 찾는다.
+            # 1순위: pgvector — keyword 임베딩 후 knowledge_chunks 유사도 검색
             rag_results = await search_similar(
                 db=self.db,
                 query=keyword,
-                top_k=5,
-                similarity_threshold=0.3,
-                trace_id=self.trace_id,
+                top_k=5,  # 최대 5개
+                similarity_threshold=0.3,  # 미만이면 제외
+                trace_id=self.trace_id,  # Langfuse 동일 Trace
             )
 
             if rag_results:
@@ -286,16 +293,14 @@ class ToolExecutor:
                         for r in rag_results
                     ],
                     "keyword": keyword,
-                    "search_method": "vector",
+                    "search_method": "vector",  # 벡터 검색 사용
                 }
 
-            # 벡터 검색 결과가 없으면 폴백. 사용자는 여전히 FAQ 일부를 발견할 수 있다.
             return await self._search_faq_fallback(keyword)
 
         except Exception as e:
-            # 임베딩/pgvector 에러 시에도 전체 FAQ 기능이 죽지 않도록 SQL ILIKE 폴백을 시도한다.
             print(f"[RAG] 벡터 검색 에러: {e}, ILIKE 폴백")
-            # 벡터 검색 중 트랜잭션이 깨졌을 수 있으므로 롤백하여 세션을 정리한다.
+            # 트랜잭션 깨짐 시 롤백 후 폴백 (깨진 세션으로 쿼리하면 추가 오류)
             await self.db.rollback()
             try:
                 return await self._search_faq_fallback(keyword)
@@ -319,6 +324,7 @@ class ToolExecutor:
         if not keyword:
             return {"success": False, "data": [], "keyword": ""}
 
+        # 벡터와 달리 의미가 아닌 질문/답변/키워드 ILIKE (품질 낮아 상위 3개만)
         result = await self.db.execute(
             select(FAQ).where(
                 or_(
@@ -337,8 +343,8 @@ class ToolExecutor:
             "success": True,
             "data": [
                 {
-                    "title": f.question,
-                    "content": f.answer,
+                    "title": f.question,  # FAQ 질문을 제목으로
+                    "content": f.answer,  # FAQ 답변을 내용으로
                 }
                 for f in faqs
             ],
