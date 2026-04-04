@@ -1,8 +1,17 @@
 """
 LangGraph 에이전트 노드 함수들.
 
-각 함수는 AgentState를 받아 부분적으로 업데이트된 dict를 반환한다.
-LangGraph가 이를 기존 상태에 merge한다.
+Router → ToolExecutor → Validator → Response 4단계 노드가 구현된 파일이다.
+
+GPT 호출(의도 분류, 인자 추출, 응답 생성)은 여기서 직접 실행하고,
+DB 검색과 RAG 검색은 tool_executor.py에 위임한다.
+
+노드 구성:
+- router_node()            : 사용자 메시지를 5가지 intent 중 하나로 분류
+- tool_executor_node()     : intent에 맞는 도구 선택 후 실행
+- validator_node()         : 도구 실행 결과 검증 + 재시도 전략 결정
+- response_node()          : 최종 응답 생성 (비스트리밍용)
+- response_node_stream()   : 최종 응답 생성 (스트리밍용, 토큰 단위 yield)
 """
 
 import json

@@ -16,17 +16,33 @@ ATTENDANCE_THRESHOLD = 70
 
 
 class RecommendationService:
+    """
+    수강생별 강습 추천을 세 카테고리로 나눠 제공한다.
+
+    카테고리별 근거 데이터:
+    - next_level     : 완료하거나 출석률 70% 이상인 강습의 다음 난이도를 추천한다.
+    - new_sport      : 아직 수강하지 않은 종목의 입문 강습을 추천한다.
+    - interest_based : 찜한 강습을 우선하고, 없으면 조회 횟수가 많은 종목을 추천한다.
+
+    후보 선정은 규칙 기반으로 하고, 추천 이유(reason)만 GPT로 생성한다.
+    """
 
     @staticmethod
     async def get_categorized_recommendations(
         db: AsyncSession,
         student_name: str
     ) -> Dict[str, Optional[dict]]:
-        """카테고리별 추천 (3가지 고정)"""
+        """
+        세 카테고리(next_level, new_sport, interest_based) 추천을 각 1건씩 반환한다.
+
+        카테고리별로 독립적으로 후보를 고르기 때문에 한 카테고리가 비어도 나머지에 영향을 주지 않는다.
+
+        후보가 없는 카테고리는 None으로 두고, 이유 생성과 로그는 채워진 항목만 처리한다.
+        """
 
         start_time = time.time()
 
-        # 1. 수강 이력 조회
+        # ── 1. 수강 이력 조회 ──
         enrollment_result = await db.execute(
             select(Enrollment)
             .options(selectinload(Enrollment.lesson).selectinload(Lesson.instructor))
@@ -35,17 +51,17 @@ class RecommendationService:
         )
         enrollments = list(enrollment_result.scalars().all())
 
-        # 2. 제외할 강습 ID
+        # ── 2. 추천 제외 ID 수집 ──
         enrolled_ids = set(e.lesson_id for e in enrollments)
 
-        # 3. target_audience 추론
+        # ── 3. 대상 연령대 추론 ──
         inferred_target = None
         for e in enrollments:
             if e.lesson and e.lesson.target_audience:
                 inferred_target = e.lesson.target_audience.value
                 break
 
-        # 4. 각 카테고리별 추천
+        # ── 4. 카테고리별 후보 선정 ──
         next_level = await RecommendationService._get_next_level(
             db, enrollments, enrolled_ids, inferred_target
         )
@@ -58,7 +74,8 @@ class RecommendationService:
             db, student_name, enrolled_ids, inferred_target
         )
 
-        # 5. AI로 추천 이유 생성 (있는 것만)
+        # ── 5. 추천 이유 생성 ──
+        # 후보 선정은 규칙 기반, 추천 이유만 GPT로 생성한다.
         categories = {
             "next_level": next_level,
             "new_sport": new_sport,
@@ -71,7 +88,7 @@ class RecommendationService:
                     student_name, enrollments, rec["lesson"], key, rec.get("base_lesson")
                 )
 
-        # 6. AI 로그
+        # ── 6. AI 로그 저장 ──
         latency_ms = (time.time() - start_time) * 1000
         ai_log = AILog(
             feature_type="recommendation",
@@ -95,25 +112,33 @@ class RecommendationService:
         exclude_ids: Set[int],
         inferred_target: Optional[str]
     ) -> Optional[dict]:
-        """다음 단계 추천 (1개)"""
+        """
+        같은 종목·대상에서 난이도 한 단계 위 강습을 추천한다.
 
-        # 완료 OR 수강 중(70%+)
+        완료했거나 출석률 70% 이상인 수강만 후보로 삼는다.
+        기초가 부족한 상태에서 상위 난이도를 추천하면 이탈과 부상 리스크가 커지기 때문이다.
+        후보가 없거나 다음 난이도 강습이 없으면 None을 반환한다.
+        """
+
+        # ── 1. 다음 단계 수강 필터링 ──
         eligible = [
             e for e in enrollments
             if e.lesson and (
                 e.status == EnrollmentStatus.COMPLETED or
                 (e.status == EnrollmentStatus.IN_PROGRESS and
-                 e.attendance_rate and e.attendance_rate >= ATTENDANCE_THRESHOLD)
+                 e.attendance_rate and e.attendance_rate >= ATTENDANCE_THRESHOLD)  # 진행 중은 70% 미만이면 제외한다.
             )
         ]
 
         if not eligible:
             return None
 
+        # ── 2. 후보별 다음 난이도 강습 탐색 ──
         for enrollment in eligible:
             lesson = enrollment.lesson
             next_diff = RecommendationService._get_next_difficulty(lesson.difficulty.value)
 
+            # 이미 최고 난이도(advanced)면 다음 단계가 없으므로 건너뛴다.
             if not next_diff:
                 continue
 
@@ -129,12 +154,16 @@ class RecommendationService:
                         not_(Lesson.id.in_(exclude_ids))
                     )
                 )
+                # 카테고리당 1건만 반환하므로 첫 매칭에서 바로 멈춘다.
                 .limit(1)
             )
 
             next_lesson = result.scalar_one_or_none()
             if next_lesson:
-                # 매칭률 계산: 출석률 기반 + 완료 보너스
+                # ── 3. 매칭 점수 계산 ──
+                # 출석률 100%라도 숙련도를 단정할 수 없어 0.9를 곱해 보정한다.
+                # 99 상한은 "완벽한 적합"을 수치로 표현하지 않기 위함이다.
+                # 출석 기록이 없으면 70을 쓴다. ATTENDANCE_THRESHOLD와 맞춰 보수적으로 잡는다.
                 base_score = enrollment.attendance_rate or 70
                 completion_bonus = 10 if enrollment.status == EnrollmentStatus.COMPLETED else 0
                 match_score = min(int(base_score * 0.9 + completion_bonus), 99)
@@ -146,6 +175,7 @@ class RecommendationService:
                     "match_score": match_score
                 }
 
+        # 탐색을 끝냈는데 적합한 다음 단계 강습이 없다.
         return None
 
     @staticmethod
@@ -155,17 +185,27 @@ class RecommendationService:
         exclude_ids: Set[int],
         inferred_target: Optional[str]
     ) -> Optional[dict]:
-        """새로운 종목 추천 (1개)"""
+        """
+        아직 수강하지 않은 종목의 입문 강습을 추천한다.
 
+        target_audience를 추론하지 못한 경우 None을 반환한다.
+        대상을 모르면 어린이에게 성인용 강습을 추천하는 등의 오류가 생길 수 있기 때문이다.
+        새 종목은 항상 입문(BEGINNER)으로 고정한다.
+        미수강 종목이 없거나 입문 강습이 없으면 None을 반환한다.
+        """
+
+        # ── 1. 대상 연령대 확인 ──
         if not inferred_target:
             return None
 
+        # ── 2. 미수강 종목 목록 추출 ──
         done_sports = set(e.lesson.sport_type for e in enrollments if e.lesson)
         new_sports = [s for s in SportType if s not in done_sports]
 
         if not new_sports:
             return None
 
+        # ── 3. 입문 강습 조회 ──
         result = await db.execute(
             select(Lesson)
             .options(selectinload(Lesson.contents), selectinload(Lesson.instructor))
@@ -178,12 +218,13 @@ class RecommendationService:
                     not_(Lesson.id.in_(exclude_ids))
                 )
             )
-            .limit(1)
+            .limit(1)  # 카테고리당 1건만 반환하므로 첫 매칭에서 바로 멈춘다.
         )
 
         lesson = result.scalar_one_or_none()
         if lesson:
-            # 매칭률 계산: 기본 70% + 완료 수강 수 × 5% (최대 90%)
+            # ── 4. 매칭 점수 계산 ──
+            # 완료 수강이 많을수록 새 종목 도전 가능성이 높다고 보아 건당 5점씩 더하고, 90에서 캡한다.
             completed_count = len([e for e in enrollments if e.status == EnrollmentStatus.COMPLETED])
             match_score = min(70 + completed_count * 5, 90)
 
@@ -194,6 +235,7 @@ class RecommendationService:
                 "match_score": match_score
             }
 
+        # 입문 강습 후보가 없다.
         return None
 
     @staticmethod
@@ -203,9 +245,16 @@ class RecommendationService:
         exclude_ids: Set[int],
         inferred_target: Optional[str]
     ) -> Optional[dict]:
-        """관심 기반 추천 (조회 + 찜)"""
+        """
+        찜하거나 자주 조회한 강습을 추천한다.
 
-        # 1. 찜한 강습 중 미등록 (우선)
+        찜을 조회보다 우선한다.
+        찜은 명시적 관심 표현이고, 조회는 약한 신호이기 때문이다.
+        찜한 강습이 없으면 조회 횟수가 가장 많은 종목의 강습을 추천한다.
+        둘 다 없으면 None을 반환한다.
+        """
+
+        # ── 1. 찜한 강습 조회 ──
         liked_result = await db.execute(
             select(Lesson)
             .options(selectinload(Lesson.contents), selectinload(Lesson.instructor))
@@ -218,20 +267,21 @@ class RecommendationService:
                 )
             )
             .order_by(desc(LessonLike.created_at))
-            .limit(1)
+            .limit(1)  # 카테고리당 1건만 반환하므로 첫 매칭에서 바로 멈춘다.
         )
 
         liked_lesson = liked_result.scalar_one_or_none()
         if liked_lesson:
+            # 찜이 있으면 바로 반환한다. 조회 기반(80)보다 5점 높게 잡아 명시적 관심을 반영한다.
             return {
                 "lesson": RecommendationService._lesson_to_dict(liked_lesson),
                 "reason_type": "interest_based",
                 "interest_source": "like",
                 "base_lesson": None,
-                "match_score": 85  # 찜 = 높은 관심
+                "match_score": 85,
             }
 
-        # 2. 자주 조회한 종목의 강습
+        # ── 2. 조회 기록 기반 종목 탐색 ──
         view_stats = await db.execute(
             select(
                 Lesson.sport_type,
@@ -249,7 +299,7 @@ class RecommendationService:
             top_sport = top_sport_row[0]
             view_count = top_sport_row[1]
 
-            # 해당 종목의 미등록 강습
+            # ── 3. 해당 종목 강습 조회 ──
             result = await db.execute(
                 select(Lesson)
                 .options(selectinload(Lesson.contents), selectinload(Lesson.instructor))
@@ -261,12 +311,13 @@ class RecommendationService:
                     )
                 )
                 .order_by(Lesson.created_at.desc())
-                .limit(1)
+                .limit(1)  # 카테고리당 1건만 반환하므로 첫 매칭에서 바로 멈춘다.
             )
 
             lesson = result.scalar_one_or_none()
             if lesson:
-                # 조회 수 기반 점수: 50% + 조회 수 × 10% (최대 80%)
+                # ── 4. 매칭 점수 계산 ──
+                # 클릭만으로는 관심이 약할 수 있어 찜(85)보다 낮은 80을 상한으로 캡한다.
                 match_score = min(50 + view_count * 10, 80)
 
                 return {
@@ -277,6 +328,7 @@ class RecommendationService:
                     "match_score": match_score
                 }
 
+        # 찜과 조회로는 후보를 만들 수 없다.
         return None
 
     @staticmethod
@@ -287,10 +339,18 @@ class RecommendationService:
         reason_type: str,
         base_lesson=None
     ) -> str:
-        """단일 추천 이유 생성"""
+        """
+        추천 카테고리별 이유를 GPT로 생성한다.
+
+        카테고리가 같아도 수강 이력과 강습명이 달라 맥락이 매번 달라지기 때문에,
+        고정 문구 대신 GPT로 개인화된 한 문장을 만든다.
+        실패 시 _get_default_reason()으로 폴백해 reason 칸이 비지 않게 한다.
+        """
 
         client = get_openai_client()
 
+        # ── 1. 카테고리별 맥락 문장 구성 ──
+        # reason_type마다 GPT에 넘길 맥락 문장을 다르게 구성한다.
         context = ""
         if reason_type == "next_level" and base_lesson:
             title = base_lesson.get("title") if isinstance(base_lesson, dict) else getattr(base_lesson, 'title', '이전 강습')
@@ -310,6 +370,7 @@ class RecommendationService:
 - 구체적인 이유 포함
 - 20~40자 내외"""
 
+        # ── 2. GPT로 추천 이유 생성 ──
         try:
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -322,11 +383,19 @@ class RecommendationService:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
+            # ── 3. 실패 시 고정 문구 폴백 ──
             print(f"추천 이유 생성 실패: {e}")
             return RecommendationService._get_default_reason(reason_type, base_lesson)
 
     @staticmethod
     def _get_default_reason(reason_type: str, base_lesson=None) -> str:
+        """
+        GPT 생성 실패 시 카테고리별 고정 문구를 반환한다.
+
+        이유 생성 실패로 추천 카드 전체를 버리면 UX가 나빠지기 때문에 폴백으로 사용한다.
+
+        알 수 없는 reason_type이면 일반 문구를 반환한다.
+        """
         if reason_type == "next_level" and base_lesson:
             title = base_lesson.get("title") if isinstance(base_lesson, dict) else getattr(base_lesson, 'title', '이전 강습')
             return f"{title}에서 배운 기초로 한 단계 더 성장해보세요!"
@@ -338,6 +407,13 @@ class RecommendationService:
 
     @staticmethod
     def _get_next_difficulty(current: str) -> Optional[str]:
+        """
+        현재 난이도의 다음 단계를 반환한다.
+
+        DIFFICULTY_ORDER 기준으로 한 단계 위를 찾는다.
+
+        가장 높은 난이도(advanced)이거나 목록에 없는 값이면 None을 반환한다.
+        """
         try:
             idx = DIFFICULTY_ORDER.index(current)
             if idx < len(DIFFICULTY_ORDER) - 1:
@@ -348,6 +424,13 @@ class RecommendationService:
 
     @staticmethod
     def _lesson_to_dict(lesson: Lesson) -> dict:
+        """
+        Lesson 모델을 추천 응답용 dict로 변환한다.
+
+        여러 콘텐츠 버전 중 is_active인 것만 썸네일에 사용한다.
+
+        활성 콘텐츠가 없으면 thumbnail_url은 None이 된다.
+        """
         active_content = None
         if lesson.contents:
             active_content = next((c for c in lesson.contents if c.is_active), None)
@@ -362,10 +445,16 @@ class RecommendationService:
             "thumbnail_url": active_content.thumbnail_url if active_content else None
         }
 
-    # 기존 호환성 유지
     @staticmethod
     async def get_recommendations(db: AsyncSession, student_name: str, limit: int = 3) -> List[dict]:
-        """기존 API 호환"""
+        """
+        기존 호출부(ToolExecutor)와의 하위 호환용 래퍼다.
+
+        get_categorized_recommendations() 결과를 리스트로 변환해 반환한다.
+
+        채워진 카테고리만 순서대로 모은 뒤 limit개로 잘라 반환한다.
+        신규 코드는 get_categorized_recommendations()를 직접 사용한다.
+        """
         categories = await RecommendationService.get_categorized_recommendations(db, student_name)
         results = []
         for key in ["next_level", "new_sport", "interest_based"]:
