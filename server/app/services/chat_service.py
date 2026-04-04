@@ -324,6 +324,39 @@ class ChatService:
             }
     
     @staticmethod
+    def _build_initial_state(
+        user_message: str,
+        student_name: Optional[str],
+        history: List[ChatMessage],
+    ) -> AgentState:
+        """
+        비스트리밍/스트리밍 경로 공통 AgentState 초기값.
+        history[:-1]: 마지막 항목은 방금 저장한 유저 메시지라 제외한다.
+        trace_id는 Langfuse span 생성 후 호출 측에서 주입한다.
+        """
+        chat_history = [
+            {"role": msg.role, "content": msg.content} for msg in history[:-1]
+        ]
+        return {
+            "user_message": user_message,
+            "student_name": student_name,
+            "chat_history": chat_history,
+            "trace_id": None,
+            "intent": "",
+            "tool_name": None,
+            "tool_args": None,
+            "tool_result": None,
+            "is_valid": False,
+            "retry_count": 0,
+            "retry_strategy": None,
+            "response": "",
+            "tools_used": [],
+            "all_tool_results": {},
+            "total_tokens": 0,
+            "error": None,
+        }
+
+    @staticmethod
     async def _run_agent_graph(
         db: AsyncSession,
         user_message: str,
@@ -342,31 +375,9 @@ class ChatService:
             - tokens_used: 총 토큰 사용량
         """
 
-        # history[:-1]: 마지막 항목은 방금 저장한 유저 메시지라 제외
-        chat_history = [
-            {"role": msg.role, "content": msg.content}
-            for msg in history[:-1]
-        ]
-
-        # AgentState 초기값 세팅 - 모든 노드가 공유하는 상태 객체
-        initial_state: AgentState = {
-            "user_message": user_message,
-            "student_name": student_name,
-            "chat_history": chat_history,
-            "trace_id": None,
-            "intent": "",
-            "tool_name": None,
-            "tool_args": None,
-            "tool_result": None,
-            "is_valid": False,
-            "retry_count": 0,
-            "retry_strategy": None,
-            "response": "",
-            "tools_used": [],
-            "all_tool_results": {},
-            "total_tokens": 0,
-            "error": None,
-        }
+        initial_state = ChatService._build_initial_state(
+            user_message, student_name, history
+        )
 
         try:
             async def tool_executor_with_db(state: AgentState):
@@ -486,30 +497,9 @@ class ChatService:
         전체 AI 파이프라인을 하나의 span으로 묶어 Langfuse에서 end-to-end 추적이 가능하게 한다.
         """
 
-        # history[:-1]: 방금 저장한 유저 메시지 제외
-        chat_history = [
-            {"role": msg.role, "content": msg.content} for msg in history[:-1]
-        ]
-
-        # AgentState 초기값 세팅 (_run_agent_graph와 동일)
-        initial_state: AgentState = {
-            "user_message": user_message,
-            "student_name": student_name,
-            "chat_history": chat_history,
-            "trace_id": None,
-            "intent": "",
-            "tool_name": None,
-            "tool_args": None,
-            "tool_result": None,
-            "is_valid": False,
-            "retry_count": 0,
-            "retry_strategy": None,
-            "response": "",
-            "tools_used": [],
-            "all_tool_results": {},
-            "total_tokens": 0,
-            "error": None,
-        }
+        initial_state = ChatService._build_initial_state(
+            user_message, student_name, history
+        )
 
         langfuse = get_langfuse()
 
