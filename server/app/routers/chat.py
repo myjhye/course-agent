@@ -3,6 +3,13 @@
 
 에이전트 기반 채팅(비스트리밍/스트리밍), 세션 목록·상세·삭제를 제공한다.
 실제 LLM/그래프 실행은 ChatService에 위임하고, 여기서는 HTTP/SSE 계층만 담당한다.
+
+제공 엔드포인트:
+- POST /         : 비스트리밍 채팅. AI 응답이 다 만들어지면 한 번에 반환.
+- POST /stream   : 스트리밍 채팅. 토큰이 생길 때마다 브라우저로 바로 전송.
+- GET  /sessions : 채팅 세션 목록 조회.
+- GET  /sessions/{session_id}    : 세션 상세 + 전체 메시지 조회.
+- DELETE /sessions/{session_id}  : 세션 및 하위 메시지 삭제.
 """
 
 from fastapi import APIRouter, Depends, HTTPException

@@ -1,3 +1,19 @@
+"""
+채팅 서비스.
+
+세션 관리, 메시지 저장, LangGraph 에이전트 실행을 조율한다.
+비스트리밍(chat)과 SSE 스트리밍(chat_stream) 두 가지 경로를 제공하며,
+AI 파이프라인 실행은 각 경로별 내부 메서드(_run_agent_graph / _run_agent_graph_stream)에서 담당한다.
+
+주요 메서드:
+- chat()                          : 비스트리밍 채팅 진입점. AI 응답이 다 만들어지면 한 번에 반환.
+- chat_stream()                   : 스트리밍 채팅 진입점. 토큰이 생길 때마다 브라우저로 바로 전송.
+- _build_initial_state()          : 두 경로가 공통으로 쓰는 에이전트 초기 상태값 생성.
+- _run_agent_graph()              : 비스트리밍용 그래프 실행. 모든 노드가 끝난 뒤 결과를 한 번에 반환.
+- _run_agent_graph_stream()       : 스트리밍용 Langfuse 측정 구간을 열고 실제 실행을 inner에 넘기는 래퍼.
+- _run_agent_graph_stream_inner() : 실제 스트리밍 실행부. Router→Tool→Validator→Response 순으로 노드를 직접 호출하며 토큰을 하나씩 전송.
+"""
+
 import json
 import time
 from typing import List, Optional, Tuple, AsyncGenerator

@@ -1,3 +1,21 @@
+/**
+ * 백엔드 REST API 클라이언트.
+ *
+ * axios 인스턴스(api)를 기반으로 각 도메인별 API 래퍼를 제공한다.
+ * 채팅 스트리밍은 브라우저 EventSource가 GET만 지원하는 한계로
+ * fetch + ReadableStream으로 POST SSE를 직접 구현한다.
+ *
+ * 도메인별 구성:
+ * - instructorApi       : 강사 관리 (운영자)
+ * - adminLessonApi      : 강습 CRUD + AI 콘텐츠 생성 (운영자)
+ * - lessonApi           : 강습 조회 + 찜 (수강생)
+ * - adminEnrollmentApi  : 수강 관리 (운영자)
+ * - myEnrollmentApi     : 내 수강 조회/신청 (수강생)
+ * - myRecommendationApi : 개인화 추천 (수강생)
+ * - adminDashboardApi   : 통계 + AI 로그 (운영자)
+ * - chatApi             : 채팅 세션 관리 + SSE 스트리밍
+ */
+
 import axios from 'axios';
 import type {
   Instructor,
