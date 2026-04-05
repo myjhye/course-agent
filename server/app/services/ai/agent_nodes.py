@@ -66,7 +66,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
     Langfuse generation으로 별도 관측을 남겨 나중에 "왜 이 의도로 갔는지"를 추적할 수 있게 한다.
     """
 
-    client = get_openai_client()  # OpenAI 클라이언트 가져오기
+    client = get_openai_client()  # AsyncOpenAI 싱글톤
     trace = _get_trace()  # Langfuse 클라이언트 가져오기 (없으면 None)
 
     try:
@@ -92,7 +92,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
                 obs_kwargs["metadata"] = {"trace_id": trace_id}
 
             with trace.start_as_current_observation(**obs_kwargs) as gen:
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
                     temperature=0,  # 의도 분류는 창의성 없이 일관되게
@@ -112,7 +112,7 @@ async def router_node(state: AgentState) -> Dict[str, Any]:
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 temperature=0,  # 의도 분류는 창의성 없이 일관되게
@@ -323,7 +323,7 @@ JSON으로 응답 (해당 없는 필드는 null):
                 obs_kwargs["metadata"] = {"trace_id": trace_id}
 
             with trace.start_as_current_observation(**obs_kwargs) as gen:
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
@@ -344,7 +344,7 @@ JSON으로 응답 (해당 없는 필드는 null):
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
@@ -396,7 +396,7 @@ JSON으로 응답:
                 obs_kwargs["metadata"] = {"trace_id": trace_id}
 
             with trace.start_as_current_observation(**obs_kwargs) as gen:
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0,
@@ -415,7 +415,7 @@ JSON으로 응답:
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0,
@@ -580,7 +580,7 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
                 obs_kwargs["metadata"] = {"trace_id": trace_id}
 
             with trace.start_as_current_observation(**obs_kwargs) as gen:
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
                     temperature=0.7,
@@ -602,7 +602,7 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 temperature=0.7,
@@ -730,7 +730,7 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
         with ctx as gen:
             # stream=True로 하면 응답이 한 번에 오지 않고 청크 단위로 온다.
             # stream_options={"include_usage": True}를 넣어야 마지막 청크에 token 사용량이 포함된다.
-            stream = client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 temperature=0.7,
@@ -742,7 +742,7 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
             full_content = ""
             total_tokens = 0
 
-            for chunk in stream:
+            async for chunk in stream:
                 choice = chunk.choices[0] if chunk.choices else None
                 delta = choice.delta if choice else None
 

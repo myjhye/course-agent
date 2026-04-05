@@ -386,7 +386,7 @@ class RecommendationService:
 
         # ── 2. 맥락 문장을 프롬프트에 넣어 GPT로 개인화된 한 문장을 생성한다. ──
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "스포츠 강습 추천 전문가"},

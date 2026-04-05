@@ -196,7 +196,7 @@ class ContentGenerator:
 - 마크다운이나 특수문자 없이 순수 텍스트로만"""
 
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "당신은 스포츠 강습 플랫폼의 카피라이터입니다."},
@@ -280,7 +280,7 @@ class ContentGenerator:
 }}"""
 
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "당신은 스포츠 강습 커리큘럼 전문가입니다. JSON 형식으로만 응답합니다."},
