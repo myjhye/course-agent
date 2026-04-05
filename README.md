@@ -93,8 +93,7 @@ course-agent/
 │   │   │   │   ├── langfuse_client.py  # Langfuse 싱글톤
 │   │   │   │   ├── llm_client.py       # OpenAI 클라이언트
 │   │   │   │   ├── content_generator.py # 강습 콘텐츠 생성
-│   │   │   │   ├── tool_executor.py    # 도구 실행기
-│   │   │   │   └── tools.py            # 도구 스키마/정의
+│   │   │   │   └── tool_executor.py    # 도구 실행기
 │   │   │   ├── chat_service.py      # LangGraph 스트리밍·세션 저장
 │   │   │   ├── recommendation_service.py # 추천 로직
 │   │   │   ├── feedback_service.py  # AI 피드백 생성
