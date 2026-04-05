@@ -73,50 +73,7 @@ class EnrollmentService:
             }
             for enrollment in enrollments
         ]
-    
-    @staticmethod
-    async def get_all_enrollments(
-        db: AsyncSession,
-        status: Optional[str] = None,
-        lesson_id: Optional[int] = None,
-        skip: int = 0,
-        limit: int = 50
-    ) -> List[dict]:
-        query = select(Enrollment).options(
-            selectinload(Enrollment.lesson).selectinload(Lesson.contents)
-        )
-        
-        conditions = []
-        if status:
-            conditions.append(Enrollment.status == status)
-        if lesson_id:
-            conditions.append(Enrollment.lesson_id == lesson_id)
-        
-        if conditions:
-            query = query.where(and_(*conditions))
-        
-        query = query.offset(skip).limit(limit)
-        result = await db.execute(query)
-        enrollments = result.scalars().all()
-        
-        return [
-            {
-                "id": enrollment.id,
-                "student_name": enrollment.student_name,
-                "lesson_id": enrollment.lesson_id,
-                "status": enrollment.status.value,
-                "attendance_rate": enrollment.attendance_rate,
-                "completion_date": enrollment.completion_date,
-                "created_at": enrollment.created_at,
-                "updated_at": enrollment.updated_at,
-                "lesson_title": enrollment.lesson.title if enrollment.lesson else None,
-                "lesson_sport_type": enrollment.lesson.sport_type.value if enrollment.lesson else None,
-                "lesson_difficulty": enrollment.lesson.difficulty.value if enrollment.lesson else None,
-                "lesson_thumbnail_url": _get_active_thumbnail(enrollment.lesson)
-            }
-            for enrollment in enrollments
-        ]
-    
+
     @staticmethod
     async def get_all_enrollments_paginated(
         db: AsyncSession,
