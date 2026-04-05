@@ -1,6 +1,20 @@
+"""
+관리자 대시보드에 필요한 통계를 DB에서 집계해 반환한다.
+
+강습·수강·강사·AI 사용 현황을 하나의 응답으로 묶어 대시보드 카드에 표시한다.
+기간 필터는 수강·AI 통계에만 적용한다. 강습·강사는 전체 누적이 의미 있기 때문이다.
+
+함수:
+- get_dashboard_stats()   : 아래 4개 집계를 모아 한 번에 반환하는 진입점
+- _get_lesson_stats()     : 강습 전체 수, 발행/초안/보관 상태별, 종목별 건수
+- _get_enrollment_stats() : 수강 신규 등록 수, 수료 수, 상태별 건수, 평균 출석률
+- _get_instructor_stats() : 강사 전체 인원 수
+- _get_ai_stats()         : AI 호출 수, 총 토큰, 평균 응답 시간, 수정률
+- get_ai_logs()           : AI 로그 목록 최신순 조회 (기능별 필터, 페이지네이션)
+"""
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 from app.models.lesson import Lesson, LessonStatus
 from app.models.enrollment import Enrollment, EnrollmentStatus
@@ -9,32 +23,30 @@ from app.models.instructor import Instructor
 
 
 class DashboardService:
-    
     @staticmethod
     async def get_dashboard_stats(
         db: AsyncSession,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
     ) -> dict:
-        """대시보드 전체 통계"""
-        
-        # 기본값: 이번 달
+        """
+        관리자 대시보드에 필요한 전체 통계를 한 번에 반환한다.
+        강습·수강·강사·AI 사용 현황을 하나의 dict로 묶어 대시보드 카드에 표시한다.
+        start_date/end_date가 없으면 이번 달 1일부터 오늘까지를 기본값으로 쓴다.
+        """
+        # 기본값: 이번 달 1일 ~ 오늘 (수강·AI 집계에만 전달된다)
         if not start_date:
             today = datetime.now()
             start_date = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if not end_date:
             end_date = datetime.now()
-        
-        # 강습 통계
+
         lesson_stats = await DashboardService._get_lesson_stats(db)
-        
-        # 수강 통계
+
         enrollment_stats = await DashboardService._get_enrollment_stats(db, start_date, end_date)
-        
-        # 강사 통계
+
         instructor_stats = await DashboardService._get_instructor_stats(db)
-        
-        # AI 사용 통계
+
         ai_stats = await DashboardService._get_ai_stats(db, start_date, end_date)
         
         return {
@@ -50,8 +62,11 @@ class DashboardService:
     
     @staticmethod
     async def _get_lesson_stats(db: AsyncSession) -> dict:
-        """강습 통계"""
-        
+        """
+        강습 현황 통계를 반환한다.
+        대시보드에서 전체 강습 수, 상태별(발행/초안/보관), 종목별 분포를 보여주기 위한 데이터다.
+        강습은 누적 재고 개념이라 기간 필터 없이 전체를 집계한다.
+        """
         # 전체 수
         total_result = await db.execute(select(func.count(Lesson.id)))
         total = total_result.scalar() or 0
@@ -84,8 +99,11 @@ class DashboardService:
         start_date: datetime,
         end_date: datetime
     ) -> dict:
-        """수강 통계"""
-        
+        """
+        수강 현황 통계를 반환한다.
+        신규 등록·기간 내 수료는 start~end 기간으로 필터하고,
+        전체 수·상태별·평균 출석률은 기간 필터 없이 전체를 집계한다.
+        """
         # 전체 수강 수
         total_result = await db.execute(select(func.count(Enrollment.id)))
         total = total_result.scalar() or 0
@@ -142,8 +160,12 @@ class DashboardService:
     
     @staticmethod
     async def _get_instructor_stats(db: AsyncSession) -> dict:
-        """강사 통계"""
-        
+        """
+        강사 현황 통계를 반환한다.
+        대시보드 인원 현황 카드에 표시할 전체 강사 수를 집계한다.
+        강사 수는 누적 인원이라 기간 필터 없이 전체를 본다.
+        """
+
         total_result = await db.execute(select(func.count(Instructor.id)))
         total = total_result.scalar() or 0
         
@@ -157,8 +179,12 @@ class DashboardService:
         start_date: datetime,
         end_date: datetime
     ) -> dict:
-        """AI 사용 통계"""
-        
+        """
+        기간 내 AI 사용 현황을 반환한다.
+        기능별 호출 수, 총 토큰, 평균 응답 시간, 수정률을 집계해
+        AI 품질과 비용을 관리자가 모니터링할 수 있게 한다.
+        수정률(edit_rate)이 높으면 AI 출력 품질 점검이 필요하다는 신호다.
+        """
         # 기능별 사용 횟수
         feature_result = await db.execute(
             select(AILog.feature_type, func.count(AILog.id))
@@ -197,7 +223,7 @@ class DashboardService:
         )
         avg_latency = latency_result.scalar() or 0
         
-        # 수정된 비율 (was_edited)
+        # 기간 내 was_edited=True 건수 → 아래에서 edit_rate 분자로 쓴다
         edited_result = await db.execute(
             select(func.count(AILog.id))
             .where(
@@ -211,8 +237,9 @@ class DashboardService:
         edited_count = edited_result.scalar() or 0
         
         total_in_period = sum(feature_counts.values())
+        # edit_rate = 기간 내 수정된 로그 / 기간 내 전체 AI 호출 × 100
         edit_rate = round((edited_count / total_in_period * 100), 1) if total_in_period > 0 else 0
-        
+
         return {
             "total_calls": total_in_period,
             "by_feature": {
@@ -233,8 +260,11 @@ class DashboardService:
         skip: int = 0,
         limit: int = 20
     ) -> list:
-        """AI 로그 목록"""
-        
+        """
+        AI 로그 목록을 최신순으로 반환한다.
+        관리자가 AI 호출 이력을 확인하고 품질을 모니터링할 때 사용한다.
+        feature_type으로 기능별 필터링이 가능하고, skip/limit으로 페이지네이션을 지원한다.
+        """
         query = select(AILog).order_by(AILog.created_at.desc())
         
         if feature_type:
