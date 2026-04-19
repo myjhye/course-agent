@@ -11,7 +11,7 @@ AI 파이프라인 실행은 각 경로별 내부 메서드(_run_agent_graph / _
 - _build_initial_state()          : 두 경로가 공통으로 쓰는 에이전트 초기 상태값 생성.
 - _run_agent_graph()              : 비스트리밍용 그래프 실행. 모든 노드가 끝난 뒤 결과를 한 번에 반환.
 - _run_agent_graph_stream()       : 스트리밍용 Langfuse 측정 구간을 열고 실제 실행을 inner에 넘기는 래퍼.
-- _run_agent_graph_stream_inner() : 실제 스트리밍 실행부. Router→Tool→Validator→Response 순으로 노드를 직접 호출하며 토큰을 하나씩 전송.
+- _run_agent_graph_stream_inner() : 실제 스트리밍 실행부. 멀티에이전트 수동 오케스트레이션(_run_multi_agent_stream)으로 토큰을 전송.
 """
 
 import json
@@ -21,24 +21,11 @@ from typing import List, Optional, Tuple, AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
-from langgraph.graph import StateGraph, END
-
-from app.config import settings
 from app.models.chat import ChatSession, ChatMessage
 from app.models.ai_log import AILog
 from app.services.ai.agent_state import AgentState
-from app.services.ai.agent_nodes import (
-    router_node,
-    tool_executor_node,
-    validator_node,
-    response_node,
-    response_node_stream,
-)
-from app.services.ai.agent_graph import (
-    build_multi_agent_graph,
-    should_retry_or_respond,
-    should_use_tool,
-)
+from app.services.ai.agent_nodes import response_node_stream
+from app.services.ai.agent_graph import build_multi_agent_graph
 from app.services.ai.langfuse_client import get_langfuse, flush_langfuse
 
 
@@ -401,41 +388,9 @@ class ChatService:
         )
 
         try:
-            def _compile_legacy_graph():
-                async def tool_executor_with_db(state: AgentState):
-                    return await tool_executor_node(state, db)
-
-                # tool_executor_node가 현재 요청의 db 세션을 클로저로 캡처해야 하므로
-                # 그래프를 전역 싱글톤으로 재사용하지 않고 요청마다 새로 조립한다.
-                graph = StateGraph(AgentState)
-                graph.add_node("router", router_node)
-                graph.add_node("tool_executor", tool_executor_with_db)
-                graph.add_node("validator", validator_node)
-                graph.add_node("response", response_node)
-
-                graph.set_entry_point("router")
-
-                graph.add_conditional_edges(
-                    "router",
-                    should_use_tool,
-                    {"tool_executor": "tool_executor", "response": "response"},
-                )
-                graph.add_edge("tool_executor", "validator")
-                graph.add_conditional_edges(
-                    "validator",
-                    should_retry_or_respond,
-                    {"tool_executor": "tool_executor", "response": "response"},
-                )
-                graph.add_edge("response", END)
-
-                return graph.compile()  # 실행 가능한 그래프로 컴파일
-
             async def _execute_graph(state: AgentState) -> AgentState:
-                if settings.use_multi_agent:
-                    state["_db"] = db
-                    compiled = build_multi_agent_graph()
-                    return await compiled.ainvoke(state)
-                compiled = _compile_legacy_graph()
+                state["_db"] = db
+                compiled = build_multi_agent_graph()
                 return await compiled.ainvoke(state)
 
             langfuse = get_langfuse()
@@ -513,10 +468,6 @@ class ChatService:
                 None,
             )
 
-    # NOTE: 스트리밍 경로는 settings.use_multi_agent=True일 때 멀티에이전트 흐름을,
-    #       False일 때 레거시 단일 Router 흐름을 사용한다.
-    #       분기는 _run_agent_graph_stream_inner 상단에서 수행한다.
-
     @staticmethod
     async def _run_agent_graph_stream(
         db: AsyncSession,
@@ -582,147 +533,15 @@ class ChatService:
         root_span,
     ) -> AsyncGenerator[dict, None]:
         """
-        LangGraph 파이프라인을 단계별로 직접 실행하면서 SSE로 스트리밍한다.
-        Router → ToolExecutor → Validator는 비스트리밍으로 실행하고,
-        Response만 stream=True로 토큰을 yield한다.
+        SSE 스트리밍으로 멀티에이전트 파이프라인을 실행한다.
+        Supervisor → 서브에이전트 → Aggregator → response_node_stream 순으로
+        _run_multi_agent_stream에서 오케스트레이션한다.
         """
 
-        if settings.use_multi_agent:
-            state: AgentState = dict(initial_state)
-            state["_db"] = db
-            async for ev in ChatService._run_multi_agent_stream(state, db, root_span):
-                yield ev
-            return
-
-        # initial_state를 복사해 작업용 state로 쓴다.
-        # dict()로 얕은 복사를 하는 이유는, 여러 번 재사용될 수 있는 initial_state를
-        # 오염시키지 않고 이 실행 컨텍스트에 한정된 변경만 반영하기 위함이다.
         state: AgentState = dict(initial_state)
-
-        # ── Phase 1: Router ──
-        # 먼저 프론트에 "의도 분석 중" 상태를 보내 사용자에게 진행 상황을 알린다.
-        yield {
-            "type": "status",
-            "data": {"step": "router", "message": "의도 분석 중..."},
-        }
-
-        # Router 노드에서 GPT-4o-mini가 사용자의 문장을 5가지 intent 중 하나로 분류한다.
-        # 예: {"intent": "faq_inquiry", "total_tokens": 85}
-        router_result = await router_node(state)
-
-        # Router 결과를 state에 병합해, 이후 단계에서 intent와 total_tokens를 참고할 수 있게 한다.
-        state.update(router_result)
-
-        intent = state["intent"]
-
-        # 어떤 intent로 분류됐는지 프론트에 알려 준다.
-        # 이 정보는 UX(상태 표시)뿐 아니라 디버깅 시 "왜 이 툴을 탔는지"를 이해하는 데 도움이 된다.
-        yield {
-            "type": "status",
-            "data": {"step": "router_done", "intent": intent},
-        }
-
-        # ── Phase 2: Tool Execution ──
-        # general_inquiry(안녕하세요/감사 인사 등)는 비즈니스 툴 호출이 필요 없으므로
-        # 바로 Response 단계로 넘어가 토큰 사용량을 줄인다.
-        if intent != "general_inquiry":
-            yield {
-                "type": "status",
-                "data": {"step": "tool_executor", "message": "정보 검색 중..."},
-            }
-
-            # ToolExecutor 노드는 intent에 맞는 도구(search_lessons, search_faq 등)를 선택하고 실행한다.
-            # 결과에는 tool_name, tool_args, tool_result, tools_used 등이 포함된다.
-            tool_result = await tool_executor_node(state, db)
-            state.update(tool_result)
-
-            # ── Phase 3: Validator ──
-            # Validator 노드는 도구 실행 결과가 충분한지 검사하고,
-            # 필요하면 retry_count와 retry_strategy를 설정해 재시도 정책을 결정한다.
-            validator_result = await validator_node(state)
-            state.update(validator_result)
-
-            # Self-Correction: 검색 결과가 없을 때 필터를 완화해 자동 재검색한다.
-            # 예) "고급 배드민턴 강습" → 결과 없음 → difficulty 필터 제거 → 입문/초급 강습 제안.
-            # retry_count가 0이면 첫 시도가 성공한 것이므로 재시도하지 않고,
-            # 2회를 넘기면 더 이상 조건을 완화해도 품질이 떨어질 수 있어 중단한다.
-            if (
-                not state["is_valid"]
-                and state["retry_count"] > 0
-                and state["retry_count"] <= 2
-            ):
-                yield {
-                    "type": "status",
-                    "data": {
-                        "step": "retry",
-                        "message": "조건 완화 재검색 중...",
-                    },
-                }
-                # retry_strategy가 "relax_filters"인 경우, tool_executor_node 내부에서
-                # 난이도/타겟 필터를 제거하고 sport_type+키워드만으로 재검색하도록 동작한다.
-                tool_result = await tool_executor_node(state, db)
-                state.update(tool_result)
-                validator_result = await validator_node(state)
-                state.update(validator_result)
-
-        # ── Phase 4: Response (스트리밍) ──
-        # 여기서부터 OpenAI `stream=True`를 통해 토큰을 하나씩 받아 프론트에 중계한다.
-        # 사용자는 "답변 생성 중..." 메시지 이후 글자가 한 글자씩 타이핑되는 경험을 하게 된다.
-        yield {
-            "type": "status",
-            "data": {"step": "response", "message": "답변 생성 중..."},
-        }
-
-        response_tokens = 0
-        full_response = ""
-
-        # response_node_stream은 OpenAI 스트리밍 응답을 래핑해
-        # {"type": "token", "content": "..."} / {"type": "usage", "total_tokens": N}
-        # 형태로 토큰과 사용량 정보를 전달한다.
-        async for chunk in response_node_stream(state):
-            if chunk["type"] == "token":
-                full_response += chunk["content"]
-                # 프론트의 onToken 콜백이 이 이벤트를 받아, 마지막 assistant 메시지에 문자열을 append한다.
-                yield {
-                    "type": "token",
-                    "data": {"content": chunk["content"]},
-                }
-            elif chunk["type"] == "usage":
-                # OpenAI의 `stream_options={"include_usage": True}` 설정 덕분에
-                # 마지막 청크에서만 total_tokens 정보가 제공된다.
-                response_tokens = chunk.get("total_tokens", 0)
-
-        # 스트리밍이 끝난 시점의 최종 응답 텍스트와 토큰 수를 state에 반영한다.
-        state["response"] = full_response
-        state["total_tokens"] = state.get("total_tokens", 0) + response_tokens
-
-        # Langfuse 루트 span이 존재하면, 최종 응답과 메타데이터를 업데이트해 Trace 뷰에서 볼 수 있게 한다.
-        if root_span is not None:
-            try:
-                tools_used = state.get("tools_used", []) or []
-                root_span.update(
-                    output={"response": full_response, "tools_used": tools_used},
-                    metadata={
-                        "intent": state.get("intent"),
-                        "iteration_count": len(tools_used),
-                        "total_tokens": state.get("total_tokens"),
-                    },
-                )
-            except Exception:
-                # 관측 시스템 장애가 사용자 응답 흐름에 영향을 주면 안 되므로, 예외는 조용히 무시한다.
-                pass
-
-        # 최종 결과 이벤트는 chat_stream()에서 수집되어
-        # DB에 assistant 메시지와 AILog를 저장하는 데 사용된다.
-        yield {
-            "type": "result",
-            "data": {
-                "response": full_response,
-                "tools_used": state.get("tools_used", []),
-                "all_tool_results": state.get("all_tool_results", {}),
-                "total_tokens": state.get("total_tokens", 0),
-            },
-        }
+        state["_db"] = db
+        async for ev in ChatService._run_multi_agent_stream(state, db, root_span):
+            yield ev
 
     _AGENT_STATUS_MESSAGES: dict[str, str] = {
         "lesson": "강습 정보 찾는 중...",

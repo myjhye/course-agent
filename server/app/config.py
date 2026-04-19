@@ -22,8 +22,6 @@ class Settings(BaseSettings):
     # CORS/앱 URL: 클라이언트가 접근하는 서버 주소. Railway 등에서는 RAILWAY_PUBLIC_DOMAIN 등으로 덮어쓴다.
     base_url: str = "http://localhost:8000"
 
-    use_multi_agent: bool = False
-
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
