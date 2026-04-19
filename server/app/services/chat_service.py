@@ -513,9 +513,9 @@ class ChatService:
                 None,
             )
 
-    # NOTE: 스트리밍 경로는 Step 5B-1 기준 레거시 단일 Router로 고정되어 있다.
-    #       settings.use_multi_agent=True여도 이 경로는 영향받지 않는다.
-    #       멀티에이전트 스트리밍은 후속 스텝에서 통합될 예정.
+    # NOTE: 스트리밍 경로는 settings.use_multi_agent=True일 때 멀티에이전트 흐름을,
+    #       False일 때 레거시 단일 Router 흐름을 사용한다.
+    #       분기는 _run_agent_graph_stream_inner 상단에서 수행한다.
 
     @staticmethod
     async def _run_agent_graph_stream(
@@ -586,6 +586,13 @@ class ChatService:
         Router → ToolExecutor → Validator는 비스트리밍으로 실행하고,
         Response만 stream=True로 토큰을 yield한다.
         """
+
+        if settings.use_multi_agent:
+            state: AgentState = dict(initial_state)
+            state["_db"] = db
+            async for ev in ChatService._run_multi_agent_stream(state, db, root_span):
+                yield ev
+            return
 
         # initial_state를 복사해 작업용 state로 쓴다.
         # dict()로 얕은 복사를 하는 이유는, 여러 번 재사용될 수 있는 initial_state를
@@ -707,6 +714,146 @@ class ChatService:
 
         # 최종 결과 이벤트는 chat_stream()에서 수집되어
         # DB에 assistant 메시지와 AILog를 저장하는 데 사용된다.
+        yield {
+            "type": "result",
+            "data": {
+                "response": full_response,
+                "tools_used": state.get("tools_used", []),
+                "all_tool_results": state.get("all_tool_results", {}),
+                "total_tokens": state.get("total_tokens", 0),
+            },
+        }
+
+    _AGENT_STATUS_MESSAGES: dict[str, str] = {
+        "lesson": "강습 정보 찾는 중...",
+        "enrollment": "수강 현황 확인 중...",
+        "faq": "관련 정보 찾는 중...",
+        "facility": "체육시설 찾는 중...",
+    }
+
+    @staticmethod
+    async def _run_multi_agent_stream(
+        state: AgentState,
+        db: AsyncSession,
+        root_span,
+    ) -> AsyncGenerator[dict, None]:
+        """
+        멀티에이전트 흐름을 수동 오케스트레이션으로 스트리밍한다.
+
+        구조:
+          1. supervisor_node 실행 (LLM, 토큰 사용)
+          2. routing_mode에 따라 분기
+             - direct_response: 바로 response_node_stream
+             - single_agent/multi_agent: agent_plan 순회하며 각 에이전트 실행,
+               매 회차마다 aggregator_node로 state 갱신
+          3. response_node_stream으로 최종 응답 스트리밍
+
+        각 단계에서 status 이벤트를 yield하여 프론트 로딩 UX를 유지한다.
+        에이전트 실행 자체는 make_subagent가 반환한 함수 호출로 이루어지며,
+        함수 반환 dict를 state에 merge하는 방식으로 langgraph ainvoke와 동일한 의미론을 수동 재현한다.
+        """
+        from app.services.ai.agents import enrollment_agent, faq_agent, lesson_agent
+        from app.services.ai.supervisor_node import aggregator_node, supervisor_node
+
+        _AGENT_REGISTRY = {
+            "lesson": lesson_agent,
+            "enrollment": enrollment_agent,
+            "faq": faq_agent,
+        }
+
+        yield {
+            "type": "status",
+            "data": {"step": "supervisor", "message": "의도 분석 중..."},
+        }
+        supervisor_result = await supervisor_node(state)
+        state.update(supervisor_result)
+
+        yield {
+            "type": "status",
+            "data": {
+                "step": "supervisor_done",
+                "mode": state.get("routing_mode"),
+                "agents": state.get("agent_plan", []),
+            },
+        }
+
+        plan = state.get("agent_plan", []) or []
+        mode = state.get("routing_mode", "direct_response")
+
+        if mode != "direct_response":
+            for idx, agent_name in enumerate(plan):
+                agent_fn = _AGENT_REGISTRY.get(agent_name)
+                if agent_fn is None:
+                    continue
+
+                yield {
+                    "type": "status",
+                    "data": {
+                        "step": "agent_start",
+                        "agent": agent_name,
+                        "message": ChatService._AGENT_STATUS_MESSAGES.get(
+                            agent_name, f"{agent_name} 실행 중..."
+                        ),
+                    },
+                }
+
+                state["current_agent_index"] = idx
+
+                agent_result = await agent_fn(state)
+                state.update(agent_result)
+
+                agg_result = aggregator_node(state)
+                state.update(agg_result)
+
+                yield {
+                    "type": "status",
+                    "data": {
+                        "step": "agent_done",
+                        "agent": agent_name,
+                        "success": bool(
+                            (state.get("agent_outputs") or {})
+                            .get(agent_name, {})
+                            .get("success")
+                        ),
+                    },
+                }
+
+        yield {
+            "type": "status",
+            "data": {"step": "response", "message": "답변 생성 중..."},
+        }
+
+        response_tokens = 0
+        full_response = ""
+
+        async for chunk in response_node_stream(state):
+            if chunk["type"] == "token":
+                full_response += chunk["content"]
+                yield {
+                    "type": "token",
+                    "data": {"content": chunk["content"]},
+                }
+            elif chunk["type"] == "usage":
+                response_tokens = chunk.get("total_tokens", 0)
+
+        state["response"] = full_response
+        state["total_tokens"] = state.get("total_tokens", 0) + response_tokens
+
+        if root_span is not None:
+            try:
+                tools_used = state.get("tools_used", []) or []
+                root_span.update(
+                    output={"response": full_response, "tools_used": tools_used},
+                    metadata={
+                        "routing_mode": state.get("routing_mode"),
+                        "agent_plan": state.get("agent_plan"),
+                        "iteration_count": len(tools_used),
+                        "total_tokens": state.get("total_tokens"),
+                    },
+                )
+            except Exception:
+                pass
+
         yield {
             "type": "result",
             "data": {
