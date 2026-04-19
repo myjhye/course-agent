@@ -1,7 +1,8 @@
 """
 멀티에이전트 LangGraph 분기 조건 및 그래프 빌더.
 
-Supervisor → dispatcher → 서브에이전트(lesson/enrollment/faq) → Aggregator → Response
+Supervisor → dispatcher → 서브에이전트(lesson/enrollment/faq) → Aggregator
+→ (필요 시) reroute_supervisor → dispatcher → 추가 에이전트 → Aggregator → Response
 흐름을 `build_multi_agent_graph()`로 조립한다. 비스트리밍 실행은 chat_service가 이 빌더를 사용한다.
 """
 
@@ -43,21 +44,27 @@ def should_dispatch_agent(
 
 def should_continue_after_aggregator(
     state: AgentState,
-) -> Literal["dispatcher", "response"]:
+) -> Literal["dispatcher", "reroute", "response"]:
     """
     Aggregator 이후 분기.
-    - agent_plan에 다음 에이전트가 남았으면 dispatcher로 (multi_agent 순차)
-    - single_agent에서 방금 유효한 결과를 얻었으면 response로 바로
-    - plan 끝까지 순회했으면 response로
 
-    (Step 7에서 재라우팅 분기가 여기에 추가될 예정. 현재는 2-way만.)
+    1) agent_plan에 다음 에이전트가 남아 있으면 dispatcher로 (multi_agent 순차)
+    2) single_agent에서 실패했고 아직 재라우팅 기회가 있으면 reroute
+    3) 그 외는 response로
     """
     plan = state.get("agent_plan") or []
     idx = state.get("current_agent_index", 0)
 
-    # plan에 다음 에이전트가 남았음
     if idx < len(plan):
         return "dispatcher"
+
+    if (
+        state.get("routing_mode") == "single_agent"
+        and not state.get("is_valid", False)
+        and state.get("rerouting_count", 0) == 0
+    ):
+        return "reroute"
+
     return "response"
 
 
@@ -72,7 +79,11 @@ def build_multi_agent_graph():
 
     from app.services.ai.agent_nodes import response_node
     from app.services.ai.agents import enrollment_agent, faq_agent, lesson_agent
-    from app.services.ai.supervisor_node import aggregator_node, supervisor_node
+    from app.services.ai.supervisor_node import (
+        aggregator_node,
+        reroute_supervisor_node,
+        supervisor_node,
+    )
 
     async def _dispatcher_passthrough(state: AgentState) -> Dict[str, Any]:
         """상태 변경 없는 passthrough. 조건부 엣지로만 라우팅."""
@@ -86,6 +97,7 @@ def build_multi_agent_graph():
     g.add_node("enrollment", enrollment_agent)
     g.add_node("faq", faq_agent)
     g.add_node("aggregator", aggregator_node)
+    g.add_node("reroute_supervisor", reroute_supervisor_node)
     g.add_node("response", response_node)
 
     g.set_entry_point("supervisor")
@@ -113,15 +125,17 @@ def build_multi_agent_graph():
     for agent_name in ("lesson", "enrollment", "faq"):
         g.add_edge(agent_name, "aggregator")
 
-    # Step 7: 재라우팅 시 아래 맵에 "reroute": "reroute_supervisor" 등 추가 예정
     g.add_conditional_edges(
         "aggregator",
         should_continue_after_aggregator,
         {
             "dispatcher": "dispatcher",
+            "reroute": "reroute_supervisor",
             "response": "response",
         },
     )
+
+    g.add_edge("reroute_supervisor", "dispatcher")
 
     g.add_edge("response", END)
 

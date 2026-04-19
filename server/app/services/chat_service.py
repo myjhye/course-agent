@@ -200,6 +200,12 @@ class ChatService:
         # 프로세스가 짧게 끝나도 Langfuse 버퍼에 남지 않도록, 요청 단위로 강제 flush한다
         flush_langfuse()
 
+        # 긴 에이전트 실행 + 여러 차례의 commit 후 user_msg/assistant_msg는 expire 상태일 수 있다.
+        # 라우터 레이어의 Pydantic model_validate가 속성을 읽을 때 lazy-load로 인한
+        # MissingGreenlet 에러를 방지하기 위해 명시적으로 refresh한다.
+        await db.refresh(user_msg)
+        await db.refresh(assistant_msg)
+
         # 유저 메시지 + AI 답변 반환
         return user_msg, assistant_msg
 
@@ -217,8 +223,9 @@ class ChatService:
         이벤트 종류:
         - {"event": "status", "data": {"step": "supervisor", "message": "..."}}
         - {"event": "status", "data": {"step": "supervisor_done", "mode": "...", "agents": [...]}}
-        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq", "message": "..."}}
-        - {"event": "status", "data": {"step": "agent_done", "agent": "...", "success": true|false}}
+        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq", "message": "..."}}  # 재라우팅 시 rerouted: true
+        - {"event": "status", "data": {"step": "agent_done", "agent": "...", "success": true|false}}  # 재라우팅 시 rerouted: true
+        - {"event": "status", "data": {"step": "reroute", "from": "...", "message": "..."}}
         - {"event": "status", "data": {"step": "response", "message": "..."}}
         - {"event": "token", "data": {"content": "..."}}
         - {"event": "done", "data": {"tools_used": [...], "total_tokens": ..., "message_id": ...}}
@@ -575,7 +582,11 @@ class ChatService:
         함수 반환 dict를 state에 merge하는 방식으로 langgraph ainvoke와 동일한 의미론을 수동 재현한다.
         """
         from app.services.ai.agents import enrollment_agent, faq_agent, lesson_agent
-        from app.services.ai.supervisor_node import aggregator_node, supervisor_node
+        from app.services.ai.supervisor_node import (
+            aggregator_node,
+            reroute_supervisor_node,
+            supervisor_node,
+        )
 
         _AGENT_REGISTRY = {
             "lesson": lesson_agent,
@@ -639,6 +650,66 @@ class ChatService:
                         ),
                     },
                 }
+
+        # ── 재라우팅 (single_agent + is_valid=False일 때 1회 시도) ──
+        # for 루프 종료 후 aggregator가 반영한 state 기준. should_continue_after_aggregator와 동일 의미론.
+        if (
+            state.get("routing_mode") == "single_agent"
+            and not state.get("is_valid", False)
+            and state.get("rerouting_count", 0) == 0
+        ):
+            yield {
+                "type": "status",
+                "data": {
+                    "step": "reroute",
+                    "from": state.get("agent_plan", [])[-1]
+                    if state.get("agent_plan")
+                    else None,
+                    "message": "다른 방식으로 다시 찾아보는 중...",
+                },
+            }
+
+            reroute_result = reroute_supervisor_node(state)
+            state.update(reroute_result)
+
+            new_plan = state.get("agent_plan", []) or []
+            new_idx = state.get("current_agent_index", 0)
+
+            if new_idx < len(new_plan):
+                new_agent = new_plan[new_idx]
+                agent_fn = _AGENT_REGISTRY.get(new_agent)
+                if agent_fn is not None:
+                    yield {
+                        "type": "status",
+                        "data": {
+                            "step": "agent_start",
+                            "agent": new_agent,
+                            "message": ChatService._AGENT_STATUS_MESSAGES.get(
+                                new_agent, f"{new_agent} 실행 중..."
+                            ),
+                            "rerouted": True,
+                        },
+                    }
+
+                    agent_result = await agent_fn(state)
+                    state.update(agent_result)
+
+                    agg_result = aggregator_node(state)
+                    state.update(agg_result)
+
+                    yield {
+                        "type": "status",
+                        "data": {
+                            "step": "agent_done",
+                            "agent": new_agent,
+                            "success": bool(
+                                (state.get("agent_outputs") or {})
+                                .get(new_agent, {})
+                                .get("success")
+                            ),
+                            "rerouted": True,
+                        },
+                    }
 
         yield {
             "type": "status",

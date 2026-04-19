@@ -2,7 +2,7 @@
 Supervisor + Aggregator 노드.
 
 멀티에이전트 그래프의 진입점과 결과 집계점을 담당한다.
-재라우팅(reroute_supervisor_node)은 Step 7에서 추가된다.
+single_agent 실패 시 `reroute_supervisor_node`가 휴리스틱으로 다른 에이전트를 한 번 붙인다.
 """
 
 import json
@@ -308,3 +308,76 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
         "tool_name": main_name,
         "tool_result": main_result,
     }
+
+
+_REROUTE_MAP = {
+    "lesson": "faq",
+    "faq": "lesson",
+    "enrollment": "lesson",
+}
+
+
+def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
+    """
+    aggregator에서 is_valid=False로 넘어온 single_agent 케이스를 받아
+    다른 에이전트로 재라우팅한다.
+
+    설계:
+    - 고정 매핑(_REROUTE_MAP)으로 다음 에이전트 결정 (LLM 호출 없음)
+    - 매핑 결과가 이미 실행된 에이전트거나 없으면 재라우팅 포기(rerouting_count만 증가)
+    - agent_plan에 새 에이전트를 추가하고 current_agent_index를 맞춤
+
+    Langfuse span으로 관측한다 (왜 이 에이전트로 넘어갔는지 디버깅 가능하도록).
+    """
+    plan = state.get("agent_plan") or []
+    outputs = state.get("agent_outputs") or {}
+    current_count = state.get("rerouting_count", 0)
+
+    tried = set(outputs.keys())
+
+    last_agent = plan[-1] if plan else None
+
+    next_agent = _REROUTE_MAP.get(last_agent) if last_agent else None
+
+    if next_agent is None or next_agent in tried:
+        result: Dict[str, Any] = {
+            "rerouting_count": current_count + 1,
+            "rerouted_from": last_agent,
+        }
+    else:
+        new_plan = list(plan) + [next_agent]
+        result = {
+            "agent_plan": new_plan,
+            "current_agent_index": len(plan),
+            "rerouting_count": current_count + 1,
+            "rerouted_from": last_agent,
+        }
+
+    trace = _get_trace()
+    if trace:
+        try:
+            span_kwargs: Dict[str, Any] = {
+                "as_type": "span",
+                "name": "reroute_supervisor",
+                "input": {
+                    "last_agent": last_agent,
+                    "tried": list(tried),
+                    "rerouting_count": current_count,
+                },
+            }
+            trace_id = state.get("trace_id")
+            if trace_id:
+                span_kwargs["metadata"] = {"trace_id": trace_id}
+            with trace.start_as_current_observation(**span_kwargs) as span:
+                span.update(
+                    output={
+                        "next_agent": next_agent
+                        if next_agent is not None and next_agent not in tried
+                        else None,
+                        "gave_up": next_agent is None or next_agent in tried,
+                    }
+                )
+        except Exception:
+            pass
+
+    return result
