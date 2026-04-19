@@ -6,10 +6,10 @@ LangGraph 에이전트 상태 정의.
 TypedDict이므로 필드는 선택적으로 넣을 수 있고, 노드가 건드리지 않은 키는 유지된다.
 """
 
-from typing import TypedDict, Optional, Any, List, Dict
+from typing import TypedDict, Optional, Any, List, Dict, Literal
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """
     에이전트의 전체 상태. 라우터 → 툴 실행 → 검증 → 재시도/응답 흐름에서
     단계 간에 넘겨지는 모든 정보가 여기 담긴다.
@@ -68,4 +68,12 @@ class AgentState(TypedDict):
 
     error: Optional[str]
     # 예외 발생 시 메시지. 클라이언트에 보낼 fallback 문구를 만들 때 참고할 수 있다.
+
+    routing_mode: Literal["single_agent", "multi_agent", "direct_response"]
+    agent_plan: list[Literal["lesson", "enrollment", "faq", "facility"]]
+    current_agent_index: int
+    agent_outputs: dict[str, dict]
+    handoff_reason: Optional[str]
+    rerouting_count: int
+    rerouted_from: Optional[str]
 
