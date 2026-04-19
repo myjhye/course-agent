@@ -23,6 +23,7 @@ from sqlalchemy import select, desc
 
 from langgraph.graph import StateGraph, END
 
+from app.config import settings
 from app.models.chat import ChatSession, ChatMessage
 from app.models.ai_log import AILog
 from app.services.ai.agent_state import AgentState
@@ -33,7 +34,11 @@ from app.services.ai.agent_nodes import (
     response_node,
     response_node_stream,
 )
-from app.services.ai.agent_graph import should_use_tool, should_retry_or_respond
+from app.services.ai.agent_graph import (
+    build_multi_agent_graph,
+    should_retry_or_respond,
+    should_use_tool,
+)
 from app.services.ai.langfuse_client import get_langfuse, flush_langfuse
 
 
@@ -396,36 +401,44 @@ class ChatService:
         )
 
         try:
-            async def tool_executor_with_db(state: AgentState):
-                return await tool_executor_node(state, db)
+            def _compile_legacy_graph():
+                async def tool_executor_with_db(state: AgentState):
+                    return await tool_executor_node(state, db)
 
-            # tool_executor_node가 현재 요청의 db 세션을 클로저로 캡처해야 하므로
-            # 그래프를 전역 싱글톤으로 재사용하지 않고 요청마다 새로 조립한다.
-            graph = StateGraph(AgentState)
-            graph.add_node("router", router_node)
-            graph.add_node("tool_executor", tool_executor_with_db)
-            graph.add_node("validator", validator_node)
-            graph.add_node("response", response_node)
+                # tool_executor_node가 현재 요청의 db 세션을 클로저로 캡처해야 하므로
+                # 그래프를 전역 싱글톤으로 재사용하지 않고 요청마다 새로 조립한다.
+                graph = StateGraph(AgentState)
+                graph.add_node("router", router_node)
+                graph.add_node("tool_executor", tool_executor_with_db)
+                graph.add_node("validator", validator_node)
+                graph.add_node("response", response_node)
 
-            graph.set_entry_point("router")
+                graph.set_entry_point("router")
 
-            graph.add_conditional_edges(
-                "router",
-                should_use_tool,
-                {"tool_executor": "tool_executor", "response": "response"},
-            )
-            graph.add_edge("tool_executor", "validator")
-            graph.add_conditional_edges(
-                "validator",
-                should_retry_or_respond,
-                {"tool_executor": "tool_executor", "response": "response"},
-            )
-            graph.add_edge("response", END)
+                graph.add_conditional_edges(
+                    "router",
+                    should_use_tool,
+                    {"tool_executor": "tool_executor", "response": "response"},
+                )
+                graph.add_edge("tool_executor", "validator")
+                graph.add_conditional_edges(
+                    "validator",
+                    should_retry_or_respond,
+                    {"tool_executor": "tool_executor", "response": "response"},
+                )
+                graph.add_edge("response", END)
 
-            compiled = graph.compile()  # 실행 가능한 그래프로 컴파일
+                return graph.compile()  # 실행 가능한 그래프로 컴파일
+
+            async def _execute_graph(state: AgentState) -> AgentState:
+                if settings.use_multi_agent:
+                    state["_db"] = db
+                    compiled = build_multi_agent_graph()
+                    return await compiled.ainvoke(state)
+                compiled = _compile_legacy_graph()
+                return await compiled.ainvoke(state)
 
             langfuse = get_langfuse()
-            root_span = None
 
             if langfuse:
                 # LangGraph 전체 실행을 하나의 루트 span으로 감싼다.
@@ -437,13 +450,12 @@ class ChatService:
                         "student_name": student_name,
                     },
                 ) as span:
-                    root_span = span
                     trace_id = getattr(span, "id", None)
                     # 노드들이 같은 trace에 묶이도록 trace_id를 state에 주입
                     initial_state["trace_id"] = trace_id
 
                     # 비스트리밍: 모든 노드 실행 완료 후 최종 state 한 번에 반환
-                    final_state: AgentState = await compiled.ainvoke(initial_state)
+                    final_state: AgentState = await _execute_graph(initial_state)
 
                     tools_used = final_state.get("tools_used", []) or []
 
@@ -461,7 +473,7 @@ class ChatService:
                         },
                     )
             else:
-                final_state = await compiled.ainvoke(initial_state)
+                final_state: AgentState = await _execute_graph(initial_state)
 
             # 최종 state에서 필요한 값만 꺼내서 반환
             return (
@@ -500,6 +512,10 @@ class ChatService:
                 "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 None,
             )
+
+    # NOTE: 스트리밍 경로는 Step 5B-1 기준 레거시 단일 Router로 고정되어 있다.
+    #       settings.use_multi_agent=True여도 이 경로는 영향받지 않는다.
+    #       멀티에이전트 스트리밍은 후속 스텝에서 통합될 예정.
 
     @staticmethod
     async def _run_agent_graph_stream(

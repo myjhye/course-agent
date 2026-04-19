@@ -28,6 +28,10 @@ class AgentState(TypedDict, total=False):
     trace_id: Optional[str]
     # Langfuse trace/루트 span ID. 각 노드에서 observation에 metadata로 넣어 같은 대화를 하나의 trace로 묶는다.
 
+    _db: Any
+    # sqlalchemy.ext.asyncio.AsyncSession — 멀티에이전트 경로에서 chat_service가 주입한다.
+    # 서브에이전트가 ToolExecutor 생성 시 참조한다. (TypedDict는 런타임 검사가 없으므로 Any로 둔다.)
+
     # ── Router 결과 (router_node가 채움) ──
     intent: str
     # 분류된 의도. "search_lessons" | "get_recommendations" | "manage_enrollment" | "faq_inquiry" | "general_inquiry"
