@@ -69,6 +69,13 @@ def make_subagent(
             try:
                 result = await execute_tool(last_args, state)
                 execution_count += 1
+            except ValueError as e:
+                # _db 미주입 등 프로그래밍 계약 위반은 재시도해도 의미 없음 → 그대로 전파
+                if "requires state['_db']" in str(e):
+                    raise
+                print(f"[{name}] execute_tool 에러 (attempt {attempts}): {e}")
+                result = {"success": False, "data": None, "error": str(e)}
+                execution_count += 1
             except Exception as e:
                 print(f"[{name}] execute_tool 에러 (attempt {attempts}): {e}")
                 result = {"success": False, "data": None, "error": str(e)}
