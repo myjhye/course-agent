@@ -215,11 +215,14 @@ class ChatService:
         각 단계마다 event를 yield한다.
 
         이벤트 종류:
-        - {"event": "status", "data": {"step": "router", ...}}
+        - {"event": "status", "data": {"step": "supervisor", "message": "..."}}
+        - {"event": "status", "data": {"step": "supervisor_done", "mode": "...", "agents": [...]}}
+        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq", "message": "..."}}
+        - {"event": "status", "data": {"step": "agent_done", "agent": "...", "success": true|false}}
+        - {"event": "status", "data": {"step": "response", "message": "..."}}
         - {"event": "token", "data": {"content": "..."}}
-        - {"event": "done", "data": {"tools_used": [...], ...}}
+        - {"event": "done", "data": {"tools_used": [...], "total_tokens": ..., "message_id": ...}}
         - {"event": "error", "data": {"message": "..."}}
-        - {"event": "status", "data": {"step": "router_done", "intent": "..."}}
         """
 
         # 전체 처리 시간 측정 시작 (비스트리밍과 동일한 기준으로 모니터링하기 위함)
