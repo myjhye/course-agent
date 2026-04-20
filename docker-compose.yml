@@ -1,24 +1,27 @@
-version: '3.8'
-
 services:
-  postgres:
-    # RAG(pgvector) 마이그레이션 및 벡터 검색에 필요
-    image: pgvector/pgvector:pg17
-    container_name: course-agent-db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: course_agent
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  facility-mcp:
+    build:
+      context: ./mcp_servers/facility_server
+      dockerfile: Dockerfile
+    container_name: course-agent-facility-mcp
+    env_file:
+      - ./mcp_servers/facility_server/.env
+    expose:
+      - "8001"
+    restart: unless-stopped
 
-volumes:
-  postgres_data:
+  course-agent:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: course-agent-api
+    env_file:
+      - ./server/.env
+    environment:
+      FACILITY_MCP_URL: http://facility-mcp:8001/mcp
+    ports:
+      - "8000:8000"
+    depends_on:
+      - facility-mcp
+    restart: unless-stopped
 
