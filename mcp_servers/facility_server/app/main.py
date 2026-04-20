@@ -12,6 +12,7 @@ import os
 from dotenv import load_dotenv
 from fastmcp import FastMCP
 
+from app.tools.facility import register_facility_tools
 from app.tools.health import register_health_tools
 
 load_dotenv()
@@ -22,6 +23,7 @@ mcp = FastMCP("facility-mcp-server")
 
 # 도구 등록: 도구 모듈들은 mcp 인스턴스를 받아 @mcp.tool 데코레이터로 등록한다.
 register_health_tools(mcp)
+register_facility_tools(mcp)
 
 
 if __name__ == "__main__":
@@ -29,4 +31,5 @@ if __name__ == "__main__":
     # 포트는 .env의 MCP_PORT(기본 8001).
     # Docker·Railway에서는 별도 스크립트로 구동할 수도 있다 (Step 10·12).
     port = int(os.getenv("MCP_PORT", "8001"))
-    mcp.run(transport="http", host="127.0.0.1", port=port)
+    host = os.getenv("MCP_HOST", "127.0.0.1")
+    mcp.run(transport="http", host=host, port=port)
