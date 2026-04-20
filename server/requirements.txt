@@ -17,3 +17,4 @@ langchain-openai>=0.3.0
 langchain-core>=0.3.0
 langfuse>=2.0.0
 sse-starlette>=1.6.0,<2.0.0
+fastmcp>=3.0.0

@@ -223,7 +223,7 @@ class ChatService:
         이벤트 종류:
         - {"event": "status", "data": {"step": "supervisor", "message": "..."}}
         - {"event": "status", "data": {"step": "supervisor_done", "mode": "...", "agents": [...]}}
-        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq", "message": "..."}}  # 재라우팅 시 rerouted: true
+        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq|facility", "message": "..."}}  # 재라우팅 시 rerouted: true
         - {"event": "status", "data": {"step": "agent_done", "agent": "...", "success": true|false}}  # 재라우팅 시 rerouted: true
         - {"event": "status", "data": {"step": "reroute", "from": "...", "message": "..."}}
         - {"event": "status", "data": {"step": "response", "message": "..."}}
@@ -581,7 +581,12 @@ class ChatService:
         에이전트 실행 자체는 make_subagent가 반환한 함수 호출로 이루어지며,
         함수 반환 dict를 state에 merge하는 방식으로 langgraph ainvoke와 동일한 의미론을 수동 재현한다.
         """
-        from app.services.ai.agents import enrollment_agent, faq_agent, lesson_agent
+        from app.services.ai.agents import (
+            enrollment_agent,
+            facility_agent,
+            faq_agent,
+            lesson_agent,
+        )
         from app.services.ai.supervisor_node import (
             aggregator_node,
             reroute_supervisor_node,
@@ -592,6 +597,7 @@ class ChatService:
             "lesson": lesson_agent,
             "enrollment": enrollment_agent,
             "faq": faq_agent,
+            "facility": facility_agent,
         }
 
         yield {

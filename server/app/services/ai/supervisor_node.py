@@ -13,9 +13,8 @@ from app.services.ai.agent_nodes import _get_trace
 from app.services.ai.llm_client import get_openai_client
 
 
-# Step 4~6 시점에 facility 에이전트는 아직 미구현이므로 Supervisor가 선택하지 못하게 막는다.
-# Step 11에서 facility_agent 구현이 완료되면 이 상수를 True로 바꾸거나 프롬프트에서 제거한다.
-_FACILITY_ENABLED = False
+# Step 11부터 facility_agent 활성화.
+_FACILITY_ENABLED = True
 
 
 def _build_supervisor_prompt() -> str:
@@ -314,6 +313,7 @@ _REROUTE_MAP = {
     "lesson": "faq",
     "faq": "lesson",
     "enrollment": "lesson",
+    "facility": "lesson",
 }
 
 

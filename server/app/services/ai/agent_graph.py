@@ -23,7 +23,7 @@ def should_route_from_supervisor(state: AgentState) -> Literal["dispatcher", "re
 
 def should_dispatch_agent(
     state: AgentState,
-) -> Literal["lesson", "enrollment", "faq", "aggregator"]:
+) -> Literal["lesson", "enrollment", "faq", "facility", "aggregator"]:
     """
     dispatcher에서 어느 에이전트로 갈지 결정.
     agent_plan[current_agent_index]를 보고 분기.
@@ -36,8 +36,7 @@ def should_dispatch_agent(
     if idx >= len(plan):
         return "aggregator"
     nxt = plan[idx]
-    if nxt not in {"lesson", "enrollment", "faq"}:
-        # facility는 Step 11에서 활성화. 안전장치.
+    if nxt not in {"lesson", "enrollment", "faq", "facility"}:
         return "aggregator"
     return nxt  # type: ignore[return-value]
 
@@ -78,7 +77,12 @@ def build_multi_agent_graph():
     from langgraph.graph import END, StateGraph
 
     from app.services.ai.agent_nodes import response_node
-    from app.services.ai.agents import enrollment_agent, faq_agent, lesson_agent
+    from app.services.ai.agents import (
+        enrollment_agent,
+        facility_agent,
+        faq_agent,
+        lesson_agent,
+    )
     from app.services.ai.supervisor_node import (
         aggregator_node,
         reroute_supervisor_node,
@@ -96,6 +100,7 @@ def build_multi_agent_graph():
     g.add_node("lesson", lesson_agent)
     g.add_node("enrollment", enrollment_agent)
     g.add_node("faq", faq_agent)
+    g.add_node("facility", facility_agent)
     g.add_node("aggregator", aggregator_node)
     g.add_node("reroute_supervisor", reroute_supervisor_node)
     g.add_node("response", response_node)
@@ -118,11 +123,12 @@ def build_multi_agent_graph():
             "lesson": "lesson",
             "enrollment": "enrollment",
             "faq": "faq",
+            "facility": "facility",
             "aggregator": "aggregator",
         },
     )
 
-    for agent_name in ("lesson", "enrollment", "faq"):
+    for agent_name in ("lesson", "enrollment", "faq", "facility"):
         g.add_edge(agent_name, "aggregator")
 
     g.add_conditional_edges(
