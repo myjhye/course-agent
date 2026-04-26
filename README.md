@@ -33,18 +33,6 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 | `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor → `multi_agent: [lesson, facility]` |
 
 
-## 주요 화면
-
-라이브 데모에서 직접 확인 가능:
-
-| 경로 | 설명 |
-|---|---|
-| [`/`](https://course-agent.vercel.app/) | 홈 |
-| [`/chat`](https://course-agent.vercel.app/chat) | AI 채팅 (SSE 스트리밍) |
-| [`/lessons`](https://course-agent.vercel.app/lessons) | 강습 목록 |
-| [`/admin/dashboard`](https://course-agent.vercel.app/admin/dashboard) | 관리자 대시보드 |
-
-
 ## 아키텍처
 
 상세 설계 문서: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
@@ -151,104 +139,6 @@ course-agent/
 ```
 
 
-### 사전 준비
-
-- Docker Desktop (DB + 컴포즈용)
-- Python 3.11+, Node.js 18+
-- OpenAI API Key
-- 공공데이터포털 KSPO API Key ([data.go.kr](https://data.go.kr) 신청)
-- (선택) Langfuse 클라우드 키
-
-### 옵션 1: docker-compose로 백엔드 통합 기동 (권장)
-
-```bash
-# 환경변수 준비
-cp server/.env.example server/.env
-cp mcp_servers/facility_server/.env.example mcp_servers/facility_server/.env
-# 각 .env 파일에 키·DB URL 채워넣기
-
-# 빌드 및 기동
-docker compose up -d --build
-
-# 로그 확인
-docker compose logs -f course-agent
-docker compose logs -f facility-mcp
-```
-
-course-agent → http://localhost:8000  
-facility-mcp → 컨테이너 내부 통신만 (외부 비노출)
-
-### 옵션 2: 개별 실행 (개발용)
-
-```bash
-# 1. DB
-docker compose up -d postgres   # 또는 본인 환경의 pgvector 컨테이너
-
-# 2. Server
-cd server
-python -m venv venv
-.\venv\Scripts\Activate.ps1   # macOS/Linux: source venv/bin/activate
-pip install -r requirements.txt
-python -m alembic upgrade head
-python scripts/load_knowledge.py    # RAG 지식 로딩 (최초 1회)
-python scripts/seed_data.py          # 시드 데이터 (선택)
-python -m uvicorn app.main:app --reload
-
-# 3. Facility MCP (별도 터미널)
-cd mcp_servers/facility_server
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python -m app.main
-
-# 4. Client (별도 터미널)
-cd client
-npm install
-cp .env.example .env   # VITE_API_URL=http://localhost:8000
-npm run dev
-```
-
-접속:
-- 사용자: http://localhost:5173
-- 관리자: http://localhost:5173/admin/dashboard
-- API 문서: http://localhost:8000/docs
-
-
-## 주요 환경변수
-
-### `server/.env`
-
-```bash
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/course_agent
-OPENAI_API_KEY=sk-...
-
-# Optional - Langfuse (없으면 관측 자동 비활성화)
-LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_SECRET_KEY=sk-lf-...
-LANGFUSE_HOST=https://cloud.langfuse.com
-
-# Facility MCP
-FACILITY_MCP_URL=http://localhost:8001/mcp           # 로컬
-# 프로덕션은 Railway internal DNS:
-# FACILITY_MCP_URL=http://facility-mcp.railway.internal:8001/mcp
-```
-
-### `mcp_servers/facility_server/.env`
-
-```bash
-KSPO_API_KEY=...
-MCP_HOST=127.0.0.1   # 로컬, Docker는 0.0.0.0
-MCP_PORT=8001
-```
-
-### `client/.env`
-
-```bash
-VITE_API_URL=http://localhost:8000
-VITE_GATE_PASSWORD=...   # 외부 접근 차단용 게이트
-```
-
-
 ## AI 기능 상세
 
 ### 1. 멀티에이전트 채팅
@@ -284,50 +174,11 @@ VITE_GATE_PASSWORD=...   # 외부 접근 차단용 게이트
 
 
 ## 데이터 모델
-Instructor (강사)
-└── Lesson (강습) ── LessonContent (AI 콘텐츠, 버전 관리)
-    ├── Enrollment ── Feedback
-    ├── LessonView (조회)
-    └── LessonLike (찜)
-ChatSession ── ChatMessage
-KnowledgeChunk (RAG 청크 + pgvector 임베딩)
-FAQ
-AILog
+<img width="1440" height="1480" alt="image" src="https://github.com/user-attachments/assets/f42d9806-c612-48ac-89f6-946773154e0f" />
+
 
 체육시설 데이터는 외부 KSPO API 호출이라 로컬 모델 없음.
 
-
-## 주요 API
-
-### 채팅
-POST   /api/chat/                메시지 전송 (비스트리밍)
-POST   /api/chat/stream          SSE 스트리밍 채팅
-GET    /api/chat/sessions        세션 목록
-GET    /api/chat/sessions/:id    세션 상세
-DELETE /api/chat/sessions/:id    세션 삭제
-
-### 강습 / 수강 / 추천
-GET  /api/lessons/                    발행된 강습 목록
-GET  /api/lessons/:id                 강습 상세
-POST /api/lessons/:id/view            조회 기록
-POST /api/lessons/:id/like            찜 토글
-GET  /api/my/enrollments/             내 수강 현황
-POST /api/my/enrollments/             수강 신청
-GET  /api/my/recommendations/         맞춤 추천
-
-### 관리자
-GET  /api/admin/dashboard/                                대시보드 통계
-GET  /api/admin/dashboard/ai-logs                         AI 사용 로그
-POST /api/admin/lessons/                                  강습 등록
-POST /api/admin/lessons/:id/generate-content              AI 콘텐츠 생성
-POST /api/admin/lessons/:id/contents/:cid/regenerate-introduction
-POST /api/admin/lessons/:id/contents/:cid/regenerate-curriculum
-POST /api/admin/lessons/:id/publish                       강습 발행
-GET  /api/admin/enrollments/                              수강 목록
-PUT  /api/admin/enrollments/:id                           수강 상태 변경
-POST /api/admin/enrollments/:id/generate-feedback         AI 피드백 생성
-
-전체 스펙: http://localhost:8000/docs (FastAPI Swagger UI)
 
 ## 배포
 
@@ -341,20 +192,7 @@ POST /api/admin/enrollments/:id/generate-feedback         AI 피드백 생성
 
 GitHub `main` 브랜치 push 시 Railway가 Dockerfile 기반으로 자동 빌드·재배포.
 
-facility-mcp는 외부 비노출이라 KSPO 공공 API 키가 안전.
-
 ### Vercel (프론트엔드)
 
 `main` 브랜치 push 시 자동 배포. `VITE_*` 환경변수는 Vercel 대시보드에 등록 (`VITE_API_URL`, `VITE_GATE_PASSWORD`).
 
----
-
-## 개발 진행 단계
-
-| Phase | 내용 |
-|---|---|
-| 1 | 멀티에이전트 리팩토링 (단일 Router → Supervisor + 도메인 서브에이전트) |
-| 2 | Self-Correction 재라우팅 (도메인 간 자동 폴백) |
-| 3 | 외부 MCP 서버 (facility) — 클라이언트/서버 양방향 |
-| 4 | 배포 (Railway 멀티서비스 + Vercel) |
-| 5 | 문서 마감 |
