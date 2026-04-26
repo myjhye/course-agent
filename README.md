@@ -2,7 +2,7 @@
 
 LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI 스포츠 강습 플랫폼
 
-## 🚀 라이브 데모
+## 라이브 데모
 
 | 항목 | 링크 |
 |---|---|
@@ -11,12 +11,6 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 | **API 문서 (Swagger)** | [course-agent-production.up.railway.app/docs](https://course-agent-production.up.railway.app/docs) |
 
 배포 환경: Vercel(프론트) + Railway(백엔드 + MCP 서버 + Postgres)
-
----
-
-## 한눈에 보기
-
-**AI 에이전트 운영에 필요한 핵심 패턴들을 실제로 구현·통합한 풀스택 서비스**입니다.
 
 ### 핵심 특징
 
@@ -28,8 +22,6 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 - **Langfuse 관측성** — 모든 에이전트 노드·LLM 호출 end-to-end trace
 - **마이크로서비스 인프라** — docker-compose로 로컬 통합, Railway internal DNS로 프로덕션 서비스 간 통신
 
----
-
 ## 데모 시나리오
 
 | 사용자 입력 | 동작 |
@@ -40,7 +32,6 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 | `"파쿠르 강습 있어?"` | Supervisor → `lesson` 실패 → **재라우팅** → `faq` → 대안 안내 |
 | `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor → `multi_agent: [lesson, facility]` |
 
----
 
 ## 주요 화면
 
@@ -53,73 +44,19 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 | [`/lessons`](https://course-agent.vercel.app/lessons) | 강습 목록 |
 | [`/admin/dashboard`](https://course-agent.vercel.app/admin/dashboard) | 관리자 대시보드 |
 
----
 
 ## 아키텍처
 
 상세 설계 문서: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 
 ### 시스템 구성
-┌─────────────────────┐
-│  Vercel             │
-│  course-agent       │  ← 비밀번호 게이트(VITE_GATE_PASSWORD)
-│  (React + Vite)     │
-└──────────┬──────────┘
-           │ HTTPS
-           ▼
-┌──────────────────────────────────────────────────────┐
-│  Railway: tranquil-nourishment / production          │
-│                                                      │
-│  ┌─────────────────────┐                             │
-│  │ course-agent        │  ← public  (8000)           │
-│  │ (FastAPI+LangGraph) │                             │
-│  └─┬───────────────┬───┘                             │
-│    │ asyncpg       │ MCP HTTP (railway.internal)     │
-│    ▼               ▼                                 │
-│  ┌──────────┐   ┌────────────────────┐               │
-│  │ pgvector │   │ facility-mcp       │  ← internal   │
-│  │ Postgres │   │ (FastMCP HTTP)     │     only      │
-│  └──────────┘   └─────────┬──────────┘               │
-│                           │                          │
-└───────────────────────────┼──────────────────────────┘
-                            │ HTTPS
-                            ▼
-┌──────────────────┐
-│ KSPO Public API  │
-│ (체육시설 정보)    │
-└──────────────────┘
+<img width="907" height="1822" alt="mermaid-diagram-2026-04-26-231443" src="https://github.com/user-attachments/assets/9885adea-4afc-4df5-9c38-9bb9a9031e04" />
+
 
 ### 멀티에이전트 흐름
-사용자 메시지
-   │
-   ▼
-┌─────────────┐
-│ Supervisor  │  ← LLM이 의도 분류
-│             │     · direct_response: 인사 등 도구 불필요
-└─────┬───────┘     · single_agent: 한 도메인
-      │             · multi_agent: 여러 도메인 순차
-      ▼
-┌─────────────┐
-│ Dispatcher  │  ← 조건부 엣지로 분기
-└─┬─┬─┬─┬─────┘
-  │ │ │ │
-  ▼ ▼ ▼ ▼
-lesson / enrollment / faq / facility
-  │ │ │ │
-  ▼ ▼ ▼ ▼
-┌──────────────┐
-│  Aggregator  │  ← 결과 검증 (is_valid)
-└──┬───────────┘
-   │
-   │  is_valid=False & single_agent
-   │  & rerouting_count==0 ?
-   │
-   ├─ Yes ──▶ Reroute Supervisor (휴리스틱: lesson↔faq, etc.)
-   │           └─▶ Dispatcher 재진입
-   │
-   └─ No  ──▶ Response (SSE 토큰 스트리밍)
+<img width="1440" height="1480" alt="image" src="https://github.com/user-attachments/assets/c560a404-b612-4e4c-a913-82e04a4ac1c0" />
 
----
+
 
 ## 기술 스택
 
@@ -147,9 +84,10 @@ Python 3.11+, FastMCP 3.x, httpx, cachetools
 
 PostgreSQL + pgvector(pg17), docker-compose, Railway, Vercel
 
----
 
-## 디렉터리 구조
+## 디렉토리 구조
+
+```text
 course-agent/
 ├── server/                              # Course Agent 본체 (FastAPI)
 │   ├── app/
@@ -210,8 +148,8 @@ course-agent/
 │   └── index.html
 │
 └── docker-compose.yml                   # course-agent + facility-mcp 통합 기동
+```
 
----
 
 ### 사전 준비
 
@@ -275,7 +213,6 @@ npm run dev
 - 관리자: http://localhost:5173/admin/dashboard
 - API 문서: http://localhost:8000/docs
 
----
 
 ## 주요 환경변수
 
@@ -308,10 +245,9 @@ MCP_PORT=8001
 
 ```bash
 VITE_API_URL=http://localhost:8000
-VITE_GATE_PASSWORD=1111   # 외부 접근 차단용 게이트
+VITE_GATE_PASSWORD=...   # 외부 접근 차단용 게이트
 ```
 
----
 
 ## AI 기능 상세
 
@@ -346,7 +282,6 @@ VITE_GATE_PASSWORD=1111   # 외부 접근 차단용 게이트
 
 수강생 출석률·진도 기반 피드백 자동 생성 (관리자 기능).
 
----
 
 ## 데이터 모델
 Instructor (강사)
@@ -361,7 +296,6 @@ AILog
 
 체육시설 데이터는 외부 KSPO API 호출이라 로컬 모델 없음.
 
----
 
 ## 주요 API
 
@@ -394,8 +328,6 @@ PUT  /api/admin/enrollments/:id                           수강 상태 변경
 POST /api/admin/enrollments/:id/generate-feedback         AI 피드백 생성
 
 전체 스펙: http://localhost:8000/docs (FastAPI Swagger UI)
-
----
 
 ## 배포
 
