@@ -33,8 +33,8 @@ course-agent/
 │  Facility MCP Server  (this project)    │
 │                                         │
 │  app/main.py        FastMCP 진입점       │
-│  app/tools/         @mcp.tool 데코레이터 │
-│  app/kspo_client.py 외부 API 호출        │  
+│  app/tools/         @mcp.tool 데코레이터  │
+│  app/kspo_client.py 외부 API 호출         │  
 │  app/cache.py       TTL + per-key lock  │
 │  app/config.py      pydantic-settings   │
 └──────────────────┬──────────────────────┘
@@ -145,12 +145,6 @@ pytest tests/ -v
 - 거리순 정렬 및 좌표 누락 시 뒤로 밀기
 
 실제 API 호출 없이 `monkeypatch`로 외부 의존성 차단.
-
-## 알려진 한계
-
-- **`cpb_nm`(시군구) 필터 정확도**: KSPO API는 운영 주체 관할 기준으로 필터링하므로, "강남구"로 검색해도 결과의 `faci_addr`가 다른 구일 수 있음. 시설명·운영 단체명이 다른 자치구 정보를 담는 경우가 그 원인.
-- **위경도 누락**: 일부 시설은 좌표가 비어있음 (`faci_lat`, `faci_lot`이 빈 문자열). 거리 정렬 시 `distance_km=None`으로 뒤쪽 배치.
-- **단일 페이지만 반환**: 다중 페이지 자동 순회는 미구현. `page` 파라미터로 호출자가 페이지네이션.
 
 ## 배포
 

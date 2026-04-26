@@ -57,6 +57,8 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 ## 아키텍처
 
+상세 설계 문서: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+
 ### 시스템 구성
 ┌─────────────────────┐
 │  Vercel             │
