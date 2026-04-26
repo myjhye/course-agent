@@ -1,16 +1,9 @@
 # Architecture
 
 ## 시스템 구성
-[Vercel] course-agent.vercel.app (React)
-│ HTTPS
-▼
-[Railway: production]
-course-agent (FastAPI + LangGraph) ──┬── pgvector (Postgres)
-                                     │
-                                     └── facility-mcp (FastMCP)
-                                            │ HTTPS
-                                            ▼
-                                           KSPO API
+<img width="1440" height="1040" alt="image" src="https://github.com/user-attachments/assets/7dfce89c-782e-4239-9f34-93cb65ab95e9" />
+
+<br>
 
 | 서비스 | 노출 |
 |---|---|
@@ -20,28 +13,11 @@ course-agent (FastAPI + LangGraph) ──┬── pgvector (Postgres)
 
 서비스 간 통신은 Railway internal DNS (`facility-mcp.railway.internal:8001`).
 
----
 
 ## 멀티에이전트 그래프
-Supervisor
-│  routing_mode: direct_response | single_agent | multi_agent
-▼
-Dispatcher ──┬── lesson
-             ├── enrollment
-             ├── faq
-             └── facility
-                │
-                ▼
-Aggregator ── is_valid 판정
-│
-┌──────────┼──────────┐
-▼          ▼          ▼
-Dispatcher  Reroute    Response
-(다음)      Supervisor (SSE)
-│
-▼
-Dispatcher
-(새 에이전트)
+<img width="1440" height="1440" alt="image" src="https://github.com/user-attachments/assets/5ee3dbc9-10d8-4b8b-bf37-7e73299da626" />
+
+<br>
 
 | 노드 | 역할 |
 |---|---|
@@ -52,7 +28,7 @@ Dispatcher
 | Reroute Supervisor | 휴리스틱 매핑으로 새 에이전트 추가 |
 | Response | 최종 자연어 응답 (SSE 토큰 스트리밍) |
 
----
+<br>
 
 ## Self-Correction 재라우팅
 
@@ -74,7 +50,7 @@ faq → RAG 검색 성공
 Response → "야구 입문반은 없지만..."
 tool_used: "lesson,faq"
 
----
+<br>
 
 ## MCP 양방향
 
@@ -92,28 +68,31 @@ FastMCP로 `search_facilities` 도구 노출. 내부 흐름: KSPO API 호출 →
 
 MCP 호출 실패 시 예외 → `make_subagent` 표준 실패 경로 → 재라우팅 발동.
 
----
+<br>
 
 ## SSE 스트리밍
 
 `POST /api/chat/stream`은 LangGraph 표준 streaming이 아닌 수동 오케스트레이션(`_run_multi_agent_stream`).
 
 **이벤트 시퀀스**:
+```text
 status  step=supervisor
 status  step=supervisor_done, mode=single_agent, agents=[lesson]
 status  step=agent_start, agent=lesson
 status  step=agent_done, agent=lesson, success=true
+
 (재라우팅 발동 시)
 status  step=reroute, from=lesson
 status  step=agent_start, agent=faq, rerouted=true
 status  step=agent_done, agent=faq, rerouted=true
+
 status  step=response
 token   content=안
 token   content=녕
 ...
 done    tools_used=["lesson"], total_tokens=1234
+```
 
----
 
 ## 핵심 파일
 
