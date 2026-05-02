@@ -1,4 +1,8 @@
 """
+GPT가 질문을 분석해서 어떤 에이전트를 실행할지 결정하고, 
+결과를 수집해서 성공/실패를 판정하고, 
+실패하면 다른 에이전트로 재시도
+
 - supervisor_node: 사용자 질문을 분석해서 어떤 에이전트를 실행할지 계획 수립
 - aggregator_node: 에이전트 실행 결과를 수집하고 성공/실패 판정
 - reroute_supervisor_node: 실패 시 다른 에이전트로 재시도 (1회)
@@ -12,6 +16,15 @@ from app.services.ai.agent_nodes import _get_trace
 from app.services.ai.llm_client import get_openai_client
 
 
+# GPT-4o-mini에게 주는 지시문
+# "너는 supervisor야. 사용자 질문 보고 어떤 에이전트를 써야 하는지 JSON으로 답해"
+# GPT가 아래 형식으로 반환하면 supervisor_node가 읽어서 agent_plan을 만듦
+#
+# {
+#   "mode": "single_agent",
+#   "agents": ["lesson"],
+#   "reason": "강습 검색 요청"
+# }
 _SUPERVISOR_PROMPT = """당신은 Course Agent의 Supervisor 에이전트입니다.
 사용자 메시지를 분석해 어떤 서브에이전트가 응답에 필요한지 결정하세요.
 
@@ -53,23 +66,22 @@ agents는 실행 순서대로 작성
 
 
 async def supervisor_node(state: AgentState) -> Dict[str, Any]:
-    """
-    사용자 메시지를 분석해 실행할 에이전트 계획을 결정한다.
-    Langfuse generation으로 관측한다 (기존 router_node와 동일 패턴).
+    # 사용자 질문을 GPT-4o-mini로 분석해서 어떤 에이전트를 실행할지 계획 수립
+    # 결과를 state에 저장해서 다음 노드(dispatcher)가 읽어감
 
-    실패 시 direct_response로 폴백해 파이프라인이 멈추지 않게 한다.
-    """
-    client = get_openai_client()
-    trace = _get_trace()
-    prompt = _SUPERVISOR_PROMPT
+    client = get_openai_client() # OpenAI 클라이언트 가져오기
+    trace = _get_trace() # Langfuse 추적 객체 가져오기 (없으면 None)
+    prompt = _SUPERVISOR_PROMPT # GPT에게 줄 지시문
 
+    # GPT에게 보낼 메시지 구성
     messages = [
-        {"role": "system", "content": prompt},
-        {"role": "user", "content": state["user_message"]},
+        {"role": "system", "content": prompt}, # 역할 지시
+        {"role": "user", "content": state["user_message"]}, # 사용자 질문
     ]
 
     try:
         if trace:
+            # Langfuse가 있으면 GPT 호출을 generation으로 기록
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "supervisor",
@@ -87,18 +99,19 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
-                    temperature=0,
-                    max_tokens=200,
-                    response_format={"type": "json_object"},
+                    temperature=0, # 항상 일관된 판단
+                    max_tokens=200, # JSON 짧으니까 200으로 충분
+                    response_format={"type": "json_object"}, # JSON만 반환하도록 강제
                 )
                 tokens = (
                     response.usage.total_tokens
                     if getattr(response, "usage", None)
                     else 0
                 )
-                payload = json.loads(response.choices[0].message.content)
-                gen.update(output=payload, usage_details={"total_tokens": tokens})
+                payload = json.loads(response.choices[0].message.content) # JSON 문자열 → 딕셔너리
+                gen.update(output=payload, usage_details={"total_tokens": tokens}) # Langfuse에 결과 기록
         else:
+            # Langfuse 없으면 그냥 GPT 호출만
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
@@ -113,18 +126,20 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
             )
             payload = json.loads(response.choices[0].message.content)
 
-        # 파싱 및 검증
-        mode = payload.get("mode", "direct_response")
-        agents: List[str] = payload.get("agents") or []
-        reason = payload.get("reason")
+        # GPT 응답에서 값 꺼내기
+        mode = payload.get("mode", "direct_response") # "single_agent" | "multi_agent" | "direct_response"
+        agents: List[str] = payload.get("agents") or [] # 실행할 에이전트 목록
+        reason = payload.get("reason") # GPT가 설명한 판단 이유
 
+        # mode가 허용된 값인지 확인. 이상한 값이면 direct_response로 강제
         valid_modes = {"single_agent", "multi_agent", "direct_response"}
         if mode not in valid_modes:
             mode = "direct_response"
 
+        # 허용된 에이전트 목록
         valid_agents = {"lesson", "enrollment", "faq", "facility"}
 
-        # 중복 제거 + 허용 에이전트만 필터
+        # 중복 제거 + 허용된 에이전트만 필터 (GPT가 잘못된 값 반환할 수 있어서 방어 처리)
         seen = set()
         filtered: List[str] = []
         for a in agents:
@@ -133,13 +148,13 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 seen.add(a)
         agents = filtered
 
-        # 무결성 체크
+        # mode별 무결성 체크
         if mode == "direct_response":
-            agents = []
+            agents = [] # direct면 에이전트 필요 없음
         elif mode == "single_agent":
-            agents = agents[:1]  # 1개만
+            agents = agents[:1]  # single이면 1개만
             if not agents:
-                mode = "direct_response"
+                mode = "direct_response" # 에이전트가 없으면 direct로 강등
         elif mode == "multi_agent":
             if len(agents) < 2:
                 # LLM이 multi라면서 1개 이하면 single로 강등
@@ -147,64 +162,59 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 if mode == "single_agent":
                     agents = agents[:1]
 
+        # 다음 노드들이 읽어갈 계획을 state에 저장
         return {
-            "routing_mode": mode,
-            "agent_plan": agents,
-            "current_agent_index": 0,
-            "agent_outputs": {},
-            "handoff_reason": reason,
-            "rerouting_count": 0,
-            "total_tokens": state.get("total_tokens", 0) + tokens,
+            "routing_mode": mode, # "single_agent" | "multi_agent" | "direct_response"
+            "agent_plan": agents, # 실행할 에이전트 목록
+            "current_agent_index": 0, # 현재 실행 중인 에이전트 인덱스 (0부터 시작)
+            "agent_outputs": {}, # 각 에이전트 결과 저장용
+            "handoff_reason": reason, # GPT가 설명한 판단 이유
+            "rerouting_count": 0, # 재라우팅 횟수 (0=첫 실행)
+            "total_tokens": state.get("total_tokens", 0) + tokens, # 총 토큰 사용량
         }
 
     except Exception as e:
+        # 예외 발생 시 direct_response로 강제
         print(f"[Supervisor] 에러: {e}")
         return {
-            "routing_mode": "direct_response",
-            "agent_plan": [],
-            "current_agent_index": 0,
-            "agent_outputs": {},
-            "handoff_reason": None,
-            "rerouting_count": 0,
-            "total_tokens": state.get("total_tokens", 0),
-            "error": str(e),
+            "routing_mode": "direct_response", # 에러 발생 시 direct_response로 강제
+            "agent_plan": [], # 에이전트 계획 비움
+            "current_agent_index": 0, # 현재 실행 중인 에이전트 인덱스 초기화
+            "agent_outputs": {}, # 각 에이전트 결과 비움
+            "handoff_reason": None, # 판단 이유 비움
+            "rerouting_count": 0, # 재라우팅 횟수 초기화
+            "total_tokens": state.get("total_tokens", 0), # 총 토큰 사용량 유지
+            "error": str(e), # 에러 메시지
         }
 
 
 def aggregator_node(state: AgentState) -> Dict[str, Any]:
-    """
-    서브에이전트 실행 직후 호출된다.
-    - 방금 실행된 에이전트 결과를 확인하고 is_valid 판정
-    - current_agent_index를 1 증가시켜 다음 에이전트로 진행하거나 종료
-    - response_node 하위 호환을 위해 tool_name, tool_result를 "메인 결과"로 재정리
+    # 에이전트 실행 직후 호출
+    # 결과 수집 + 성공/실패 판정 + 인덱스 증가
+    plan = state.get("agent_plan") or [] # 전체 실행 계획
+    idx = state.get("current_agent_index", 0) # 현재 실행 중인 에이전트 인덱스
+    outputs = state.get("agent_outputs") or {} # 지금까지 실행된 에이전트 결과들
+    mode = state.get("routing_mode", "single_agent") # single / multi 구분
 
-    멀티모드 is_valid 정책:
-    - single_agent: 방금 실행한 에이전트 결과가 유효하면 True
-    - multi_agent: 지금까지 실행된 에이전트 중 하나라도 유효하면 True
-                   (빈약한 에이전트가 있어도 다른 에이전트 결과로 답변 가능)
-    """
-    plan = state.get("agent_plan") or []
-    idx = state.get("current_agent_index", 0)
-    outputs = state.get("agent_outputs") or {}
-    mode = state.get("routing_mode", "single_agent")
-
-    # 방금 실행된 에이전트 이름
+    # 방금 실행된 에이전트 이름 (예: "lesson")
     just_ran = plan[idx] if idx < len(plan) else None
 
-    # is_valid 계산
+    # 해당 에이전트 결과가 유효한지 확인
+    # success=True + data가 있어야 유효
     def _is_agent_valid(name: str) -> bool:
         r = outputs.get(name) or {}
         return bool(r.get("success")) and bool(r.get("data"))
 
+     # multi: 지금까지 실행된 에이전트 중 하나라도 유효하면 True (하나가 실패해도 다른 에이전트 결과로 답변 가능)
     if mode == "multi_agent":
         is_valid = any(_is_agent_valid(n) for n in plan[: idx + 1])
-    else:
+    # single: 방금 실행한 에이전트 결과만 판정
+    else: 
         is_valid = _is_agent_valid(just_ran) if just_ran else False
 
-    # response_node 하위 호환:
-    # 여러 에이전트가 실행되었을 때 tool_name/tool_result를 어느 것으로 둘지가 애매하다.
-    # 정책: 유효한 결과 중 "가장 마지막에 실행된" 에이전트의 결과를 메인으로 삼는다.
-    # (사용자 관점에서 최종적으로 보완된 정보가 가장 유용하다는 가정)
+    # 메인 결과 선정
+    # 여러 에이전트가 실행됐을 때 response_node에 넘길 대표 결과 1개를 고름
+    # 정책: 유효한 결과 중 가장 마지막에 실행된 에이전트 결과를 메인으로
     main_name = None
     main_result = None
     for n in reversed(plan[: idx + 1]):
@@ -217,7 +227,7 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
         main_name = just_ran
         main_result = outputs.get(just_ran)
 
-    # Langfuse span (선택적)
+    # Langfuse에 aggregator 실행 기록 (없으면 스킵)
     trace = _get_trace()
     if trace:
         try:
@@ -243,60 +253,56 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
                     }
                 )
         except Exception:
-            pass
+            pass # Langfuse 오류가 메인 흐름을 막으면 안 되므로 무시
 
     return {
-        "current_agent_index": idx + 1,
-        "is_valid": is_valid,
-        "tool_name": main_name,
-        "tool_result": main_result,
+        "current_agent_index": idx + 1, # 인덱스 증가 → 다음 에이전트로 이동
+        "is_valid": is_valid, # should_continue_after_aggregator가 읽어서 분기
+        "tool_name": main_name, # response_node가 읽어서 응답 생성에 사용
+        "tool_result": main_result, # response_node가 읽어서 응답 생성에 사용
     }
 
 
 _REROUTE_MAP = {
-    "lesson": "faq",
-    "faq": "lesson",
-    "enrollment": "lesson",
-    "facility": "lesson",
+    "lesson": "faq", # lesson 실패 → faq로 재시도
+    "faq": "lesson", # faq 실패 → lesson으로 재시도
+    "enrollment": "lesson", # enrollment 실패 → lesson으로 재시도
+    "facility": "lesson", # facility 실패 → lesson으로 재시도
 }
 
 
 def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
-    """
-    aggregator에서 is_valid=False로 넘어온 single_agent 케이스를 받아
-    다른 에이전트로 재라우팅한다.
+    # single_agent 실패 시 _REROUTE_MAP을 보고 다른 에이전트로 재시도
+    # LLM 호출 없이 고정 매핑으로 결정 (빠르고 단순)
+    plan = state.get("agent_plan") or [] # 현재 실행 계획
+    outputs = state.get("agent_outputs") or {} # 지금까지 실행된 에이전트 결과들
+    current_count = state.get("rerouting_count", 0) # 현재 재시도 횟수
 
-    설계:
-    - 고정 매핑(_REROUTE_MAP)으로 다음 에이전트 결정 (LLM 호출 없음)
-    - 매핑 결과가 이미 실행된 에이전트거나 없으면 재라우팅 포기(rerouting_count만 증가)
-    - agent_plan에 새 에이전트를 추가하고 current_agent_index를 맞춤
+    tried = set(outputs.keys()) # 이미 실행한 에이전트 목록 (같은 에이전트 중복 실행 방지)
 
-    Langfuse span으로 관측한다 (왜 이 에이전트로 넘어갔는지 디버깅 가능하도록).
-    """
-    plan = state.get("agent_plan") or []
-    outputs = state.get("agent_outputs") or {}
-    current_count = state.get("rerouting_count", 0)
+    last_agent = plan[-1] if plan else None # 방금 실패한 에이전트 이름 (예: "lesson")
 
-    tried = set(outputs.keys())
+    next_agent = _REROUTE_MAP.get(last_agent) if last_agent else None # 매핑에서 다음 에이전트 결정 (예: "lesson" → "faq")
 
-    last_agent = plan[-1] if plan else None
-
-    next_agent = _REROUTE_MAP.get(last_agent) if last_agent else None
-
+    # 매핑에 없거나 이미 실행한 에이전트면 재시도 포기
+    # rerouting_count만 올리고 plan은 그대로 둠
     if next_agent is None or next_agent in tried:
         result: Dict[str, Any] = {
             "rerouting_count": current_count + 1,
             "rerouted_from": last_agent,
         }
     else:
+        # 재시도할 에이전트를 plan 뒤에 추가
+        # current_agent_index를 새 에이전트 위치로 맞춤
         new_plan = list(plan) + [next_agent]
         result = {
-            "agent_plan": new_plan,
-            "current_agent_index": len(plan),
-            "rerouting_count": current_count + 1,
-            "rerouted_from": last_agent,
+            "agent_plan": new_plan, # 예: ["lesson"] → ["lesson", "faq"]
+            "current_agent_index": len(plan), # 새 에이전트 인덱스로 이동
+            "rerouting_count": current_count + 1, # 재시도 횟수 증가
+            "rerouted_from": last_agent, # 어디서 넘어왔는지 기록
         }
 
+    # Langfuse에 reroute 실행 기록 (없으면 스킵)
     trace = _get_trace()
     if trace:
         try:
@@ -322,6 +328,6 @@ def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
                     }
                 )
         except Exception:
-            pass
+            pass # Langfuse 오류가 메인 흐름을 막으면 안 되므로 무시
 
     return result
