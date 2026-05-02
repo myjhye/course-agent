@@ -1,8 +1,7 @@
 """
-Supervisor + Aggregator 노드.
-
-멀티에이전트 그래프의 진입점과 결과 집계점을 담당한다.
-single_agent 실패 시 `reroute_supervisor_node`가 휴리스틱으로 다른 에이전트를 한 번 붙인다.
+- supervisor_node: 사용자 질문을 분석해서 어떤 에이전트를 실행할지 계획 수립
+- aggregator_node: 에이전트 실행 결과를 수집하고 성공/실패 판정
+- reroute_supervisor_node: 실패 시 다른 에이전트로 재시도 (1회)
 """
 
 import json
@@ -13,60 +12,7 @@ from app.services.ai.agent_nodes import _get_trace
 from app.services.ai.llm_client import get_openai_client
 
 
-# Step 11부터 facility_agent 활성화.
-_FACILITY_ENABLED = True
-
-
-def _build_supervisor_prompt() -> str:
-    """
-    Supervisor 시스템 프롬프트를 생성한다.
-
-    _FACILITY_ENABLED가 False이면 프롬프트 전체에 'facility' 문자열이
-    등장하지 않도록 한다 (검증 스크립트 및 LLM JSON 예시 오염 방지).
-    """
-    if _FACILITY_ENABLED:
-        return _SUPERVISOR_PROMPT_WITH_FACILITY
-    return _SUPERVISOR_PROMPT_NO_FACILITY
-
-
-_SUPERVISOR_PROMPT_NO_FACILITY = """당신은 Course Agent의 Supervisor 에이전트입니다.
-사용자 메시지를 분석해 어떤 서브에이전트가 응답에 필요한지 결정하세요.
-
-에이전트 역할
-
-lesson: Course Agent 플랫폼의 강습 검색·상세 (강습 목록, 시간표, 강사 정보)
-enrollment: 로그인 사용자의 수강 현황 조회 또는 맞춤 추천
-faq: 환불/결제/이용 방법/가능 여부 등 정보성 질문 (RAG)
-
-분류 기준
-
-direct_response: 인사·감사·잡담 — Tool 불필요, 바로 답변
-single_agent: 하나의 에이전트로 답변 가능
-multi_agent: 두 영역 이상의 정보가 동시에 필요한 경우
-예시: "강습 목록을 보여주고 환불 규정도 알려줘"
-→ ["lesson", "faq"]
-주의: "내 수강 현황 보여주고 다음 단계 추천해줘"는 enrollment 하나로 처리 가능 → single_agent
-
-판단 시 유의
-
-"~해도 될까?", "~할 수 있나?" 같은 가능 여부 질문은 faq로 분류 (강습 검색 아님)
-단순 "추천해줘"는 enrollment (플랫폼 내 추천)
-
-출력 형식
-반드시 아래 JSON만 응답하세요.
-{
-  "mode": "single_agent" | "multi_agent" | "direct_response",
-  "agents": ["lesson", "faq"],
-  "reason": "판단 이유 한 줄"
-}
-
-mode가 direct_response면 agents는 빈 배열 []
-agents는 실행 순서대로 작성
-같은 에이전트를 중복 포함하지 말 것
-"""
-
-
-_SUPERVISOR_PROMPT_WITH_FACILITY = """당신은 Course Agent의 Supervisor 에이전트입니다.
+_SUPERVISOR_PROMPT = """당신은 Course Agent의 Supervisor 에이전트입니다.
 사용자 메시지를 분석해 어떤 서브에이전트가 응답에 필요한지 결정하세요.
 
 에이전트 역할
@@ -115,7 +61,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
     """
     client = get_openai_client()
     trace = _get_trace()
-    prompt = _build_supervisor_prompt()
+    prompt = _SUPERVISOR_PROMPT
 
     messages = [
         {"role": "system", "content": prompt},
@@ -176,9 +122,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
         if mode not in valid_modes:
             mode = "direct_response"
 
-        valid_agents = {"lesson", "enrollment", "faq"}
-        if _FACILITY_ENABLED:
-            valid_agents.add("facility")
+        valid_agents = {"lesson", "enrollment", "faq", "facility"}
 
         # 중복 제거 + 허용 에이전트만 필터
         seen = set()
