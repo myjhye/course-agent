@@ -44,6 +44,9 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 ### 멀티에이전트 흐름
 <img width="1440" height="1480" alt="image" src="https://github.com/user-attachments/assets/c560a404-b612-4e4c-a913-82e04a4ac1c0" />
 
+### 파일별 실행 흐름
+<img width="1440" height="1960" alt="image" src="https://github.com/user-attachments/assets/1c1149ca-a514-460d-b534-9c1485787bee" />
+
 
 
 ## 기술 스택
