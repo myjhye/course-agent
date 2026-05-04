@@ -93,6 +93,10 @@ token   content=녕
 done    tools_used=["lesson"], total_tokens=1234
 ```
 
+## 파일별 실행 흐름
+<img width="1440" height="1960" alt="image" src="https://github.com/user-attachments/assets/1c1149ca-a514-460d-b534-9c1485787bee" />
+
+
 
 ## 핵심 파일
 
