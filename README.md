@@ -14,9 +14,9 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 ### 핵심 특징
 
-- **LangGraph Supervisor 패턴 기반 멀티에이전트** — lesson / enrollment / faq / facility 4개 도메인 서브에이전트 분리, 복합 질문 multi-agent 순차 실행
-- **Self-Correction 재라우팅** — 에이전트 결과 부실 시 다른 도메인으로 자동 재분배 (예: lesson 검색 실패 → faq로 자동 폴백)
-- **MCP 클라이언트/서버 양방향 구현** — 공공 체육시설 API(KSPO)를 MCP 도구로 노출하는 독립 서버 + Course Agent의 MCP 클라이언트 통합
+- **LangGraph Supervisor 패턴 기반 멀티에이전트** — lesson / enrollment / faq / facility / calendar 5개 도메인 서브에이전트 분리, 복합 질문 multi-agent 순차 실행
+- **Self-Correction 재라우팅** — 에이전트 결과 부실 시 다른 도메인으로 자동 재분배 (예: lesson 검색 실패 ➡️ faq로 자동 폴백, calendar 실패 ➡️ lesson으로 폴백)
+- **MCP 클라이언트/서버 양방향 구현** — 공공 체육시설 API(KSPO)와 Google Calendar API를 MCP 도구로 노출하는 독립 서버 구축 및 Course Agent의 MCP 클라이언트 연동
 - **SSE 토큰 스트리밍** — LangGraph 노드별 실시간 상태 + GPT 토큰 스트림
 - **RAG (pgvector)** — 125개 지식 청크 임베딩 + 코사인 유사도 검색, ILIKE 폴백 지원
 - **Langfuse 관측성** — 모든 에이전트 노드·LLM 호출 end-to-end trace
@@ -26,28 +26,101 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 | 사용자 입력 | 동작 |
 |---|---|
-| `"수영 강습 알려줘"` | Supervisor → `lesson` 단일 호출 → DB 검색 결과 반환 |
-| `"강습 목록 보여주고 환불 규정도 알려줘"` | Supervisor → `multi_agent: [lesson, faq]` 순차 실행 → 통합 응답 |
-| `"서울에서 수영장 알려줘"` | Supervisor → `facility` → MCP 호출 → KSPO 공공 API 결과 |
-| `"파쿠르 강습 있어?"` | Supervisor → `lesson` 실패 → **재라우팅** → `faq` → 대안 안내 |
-| `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor → `multi_agent: [lesson, facility]` |
+| `"수영 강습 알려줘"` | Supervisor ➡️ `lesson` 단일 호출 ➡️ DB 검색 결과 반환 |
+| `"강습 목록 보여주고 환불 규정도 알려줘"` | Supervisor ➡️ `multi_agent: [lesson, faq]` 순차 실행 ➡️ 통합 응답 |
+| `"서울에서 수영장 알려줘"` | Supervisor ➡️ `facility` ➡️ MCP 호출 ➡️ KSPO 공공 API 결과 |
+| `"내일 오전 10시에 테니스 강습 일정 구글 캘린더에 등록해줘"` | Supervisor ➡️ `calendar` ➡️ MCP 호출 ➡️ 구글 캘린더 이벤트 등록 성공 |
+| `"내일 스케줄 확인해줘"` | Supervisor ➡️ `calendar` ➡️ MCP 호출 ➡️ 구글 캘린더 일정 조회 |
+| `"파쿠르 강습 있어?"` | Supervisor ➡️ `lesson` 실패 ➡️ **재라우팅** ➡️ `faq` ➡️ 대안 안내 |
+| `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor ➡️ `multi_agent: [lesson, facility]` |
 
+---
 
 ## 아키텍처
 
 상세 설계 문서: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 
 ### 시스템 구성
-<img width="907" height="1822" alt="mermaid-diagram-2026-04-26-231443" src="https://github.com/user-attachments/assets/9885adea-4afc-4df5-9c38-9bb9a9031e04" />
 
+```mermaid
+graph TD
+    Client[React Client (Vite) - Port 5173] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
+    Server <== SQLAlchemy ==> DB[(PostgreSQL + pgvector)]
+    Server <== FastMCP Client ==> FacilityMCP[Facility MCP Server - Port 8001]
+    Server <== FastMCP Client ==> CalendarMCP[Calendar MCP Server - Port 8002]
+    
+    FacilityMCP <== HTTP ==> KSPO[KSPO 공공 체육시설 API]
+    CalendarMCP <== HTTP ==> Google[Google Calendar API]
+```
 
 ### 멀티에이전트 흐름
-<img width="1440" height="1480" alt="image" src="https://github.com/user-attachments/assets/c560a404-b612-4e4c-a913-82e04a4ac1c0" />
+
+```mermaid
+graph TD
+    User([사용자 입력]) --> Supervisor[Supervisor: 의도 분석 & 플랜 수립]
+    Supervisor --> Dispatcher{Dispatcher: 다음 노드 선택}
+    
+    Dispatcher --> Lesson[lesson_agent: 강습 DB 조회/신청]
+    Dispatcher --> Enrollment[enrollment_agent: 수강 현황/추천]
+    Dispatcher --> FAQ[faq_agent: FAQ RAG 검색]
+    Dispatcher --> Facility[facility_agent: 체육시설 MCP 연동]
+    Dispatcher --> Calendar[calendar_agent: 구글 캘린더 MCP 연동]
+    
+    Lesson --> Aggregator[Aggregator: 결과 검증]
+    Enrollment --> Aggregator
+    FAQ --> Aggregator
+    Facility --> Aggregator
+    Calendar --> Aggregator
+    
+    Aggregator --> |is_valid = True| Response[Response: 자연어 스트리밍 응답 생성]
+    Aggregator --> |is_valid = False & Reroute| Reroute[Reroute Supervisor: Heuristic 백업 매핑]
+    
+    Reroute --> Dispatcher
+    Response --> END([종료])
+```
 
 ### 파일별 실행 흐름
-<img width="1440" height="1960" alt="image" src="https://github.com/user-attachments/assets/1c1149ca-a514-460d-b534-9c1485787bee" />
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client (React)
+    participant main as server/app/main.py
+    participant router as app/routers/chat.py
+    participant service as app/services/chat_service.py
+    participant graph as app/services/ai/agent_graph.py
+    participant supervisor as app/services/ai/supervisor_node.py
+    participant agents as app/services/ai/agents/ (lesson/enroll/faq/facility/calendar)
+    participant mcp as app/services/ai/mcp_client.py
+    participant db as DB (Postgres/pgvector/RAG)
 
+    Client ->> main: HTTP POST /api/chat/stream
+    main ->> router: 라우트
+    router ->> service: chat_stream() / _run_multi_agent_stream()
+    service ->> graph: build_multi_agent_graph()
+    graph ->> supervisor: supervisor_node()
+    supervisor -->> service: [SSE] supervisor_done 이벤트 전송
+    
+    loop 에이전트 실행 계획 순차 수행
+        graph ->> agents: 각 에이전트 실행 (인자 추출 및 실행)
+        alt 로컬 DB 조회 에이전트
+            agents ->> db: DB Query
+            db -->> agents: 조회 데이터
+        else 외부 MCP 연동 에이전트 (시설/캘린더)
+            agents ->> mcp: call_tool()
+            mcp -->> agents: MCP 결과 데이터
+        end
+        graph ->> supervisor: aggregator_node() 검증 및 인덱스 증가
+        alt 검증 실패 시 자가 수정 (1회)
+            supervisor ->> supervisor: reroute_supervisor_node() 계획 재수립
+        end
+    end
+    
+    graph ->> service: 최종 완료 상태 전달
+    service ->> Client: SSE token 스트리밍 & done 이벤트
+```
+
+---
 
 ## 기술 스택
 
@@ -67,20 +140,22 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 React 18, TypeScript, Vite, TailwindCSS, React Router v6, Axios
 
-### MCP Server (`mcp_servers/facility_server/`)
+### MCP Servers (`mcp_servers/`)
 
-Python 3.11+, FastMCP 3.x, httpx, cachetools
+* **`facility_server/`**: Python 3.11+, FastMCP 3.x, httpx, cachetools (공공 체육시설 중개)
+* **`calendar_server/`**: Python 3.11+, FastMCP 3.x, google-api-python-client, google-auth, python-dotenv (구글 캘린더 중개)
 
 ### 인프라
 
 PostgreSQL + pgvector(pg17), docker-compose, Railway, Vercel
 
+---
 
 ## 디렉토리 구조
 
 ```text
 course-agent/
-├── server/                              # Course Agent 본체 (FastAPI)
+├── server/                              # Course Agent 백엔드 (FastAPI)
 │   ├── app/
 │   │   ├── models/                      # SQLAlchemy 모델 (lesson, enrollment, chat, knowledge ...)
 │   │   ├── routers/                     # API 라우터 (admin/, my/, lessons, chat)
@@ -94,18 +169,18 @@ course-agent/
 │   │   │       ├── agent_graph.py       # build_multi_agent_graph + 조건부 분기
 │   │   │       ├── agent_nodes.py       # response_node + 공용 헬퍼
 │   │   │       ├── supervisor_node.py   # Supervisor + Aggregator + reroute_supervisor
-│   │   │       ├── mcp_client.py        # facility MCP 서버 호출 클라이언트
+│   │   │       ├── mcp_client.py        # facility / calendar MCP 호출 클라이언트
 │   │   │       ├── tool_executor.py     # lesson/enrollment/faq 도구 실행
-│   │   │       ├── embedding_service.py # 임베딩 생성 + pgvector 검색
+│   │   │       ├── embedding_service.py # RAG 임베딩 생성 + pgvector 검색
 │   │   │       ├── langfuse_client.py   # Langfuse 싱글톤
 │   │   │       ├── llm_client.py        # OpenAI 클라이언트
-│   │   │       ├── content_generator.py # 강습 콘텐츠 자동 생성
 │   │   │       └── agents/
 │   │   │           ├── base.py          # make_subagent 팩토리
 │   │   │           ├── lesson_agent.py
 │   │   │           ├── enrollment_agent.py
 │   │   │           ├── faq_agent.py
-│   │   │           └── facility_agent.py  # MCP 호출 서브에이전트
+│   │   │           ├── facility_agent.py  # MCP 호출 서브에이전트
+│   │   │           └── calendar_agent.py  # 구글 캘린더 연동 서브에이전트
 │   │   └── main.py
 │   ├── knowledge_base/                  # RAG 지식 (md 19개, 청크 125개)
 │   ├── scripts/                         # load_knowledge.py, seed_data.py
@@ -114,33 +189,28 @@ course-agent/
 │   └── requirements.txt
 │
 ├── mcp_servers/
-│   └── facility_server/                 # 독립 MCP 서버 (KSPO 공공 API 래핑)
+│   ├── facility_server/                 # 독립 MCP 서버 (KSPO 공공 API 래핑)
+│   │   ├── app/
+│   │   │   ├── main.py                  # FastMCP 진입점
+│   │   │   └── ...
+│   │   └── README.md
+│   └── calendar_server/                 # 독립 MCP 서버 (Google Calendar API 래핑)
 │       ├── app/
 │       │   ├── main.py                  # FastMCP 진입점
 │       │   ├── config.py                # pydantic-settings
-│       │   ├── kspo_client.py           # 공공 API 클라이언트
-│       │   ├── cache.py                 # TTL 캐시 + per-key lock
-│       │   └── tools/
-│       │       ├── health.py            # ping
-│       │       └── facility.py          # search_facilities (거리 정렬 옵션)
-│       ├── tests/                       # pytest (12 cases)
+│       │   └── __init__.py
 │       ├── Dockerfile
+│       ├── requirements.txt
+│       ├── .env.example
 │       └── README.md
 │
 ├── client/                              # React 프론트엔드
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── PasswordGate.tsx         # 외부 접근 차단 게이트
-│   │   │   ├── layout/
-│   │   │   └── common/
-│   │   ├── pages/                       # HomePage, ChatPage, admin/, my/ ...
-│   │   ├── services/api.ts              # SSE 스트리밍 파싱 포함
-│   │   └── App.tsx
-│   └── index.html
+│   └── ...
 │
-└── docker-compose.yml                   # course-agent + facility-mcp 통합 기동
+└── docker-compose.yml                   # 복수 컨테이너 통합 기동
 ```
 
+---
 
 ## AI 기능 상세
 
@@ -152,9 +222,10 @@ course-agent/
 | lesson_agent | 강습 검색·상세 조회 (DB) |
 | enrollment_agent | 수강 현황·맞춤 추천 (DB) |
 | faq_agent | FAQ RAG 검색 (pgvector + ILIKE 폴백) |
-| facility_agent | 공공 체육시설 검색 (MCP → KSPO API) |
+| facility_agent | 공공 체육시설 검색 (MCP ➡️ KSPO API) |
+| calendar_agent | 구글 캘린더 일정 추가/확인 (MCP ➡️ Google Calendar API) |
 | Aggregator | 에이전트 결과 통합·검증 (`is_valid`) |
-| Reroute Supervisor | 휴리스틱 매핑(lesson↔faq, enrollment→lesson, facility→lesson)으로 재라우팅 |
+| Reroute Supervisor | 휴리스틱 매핑(lesson➡️faq, facility➡️lesson, calendar➡️lesson 등)으로 재라우팅 |
 | Response (stream) | OpenAI `stream=True`로 토큰 단위 SSE 출력 |
 
 ### 2. AI 콘텐츠 자동 생성
@@ -163,39 +234,91 @@ course-agent/
 
 ### 3. 맞춤 추천
 
-| 카테고리 | 조건 |
-|---|---|
-| 🎯 다음 단계 | 완료 또는 출석률 70%+ |
-| 🌟 새로운 도전 | 미경험 종목 입문 |
-| 💡 관심 기반 | 찜 또는 자주 조회한 종목 |
-
 추천 이유는 GPT-4o-mini가 개인화하여 생성.
 
-### 4. AI 피드백 생성
-
-수강생 출석률·진도 기반 피드백 자동 생성 (관리자 기능).
-
+---
 
 ## 데이터 모델
-<img width="1440" height="1480" alt="image" src="https://github.com/user-attachments/assets/f42d9806-c612-48ac-89f6-946773154e0f" />
 
+```mermaid
+erDiagram
+    ChatSession ||--o{ ChatMessage : "has"
+    ChatSession ||--o{ AILog : "traces"
+    ChatMessage {
+        int id PK
+        string session_id FK
+        string role
+        string content
+        string tool_used
+        json tool_result
+        datetime created_at
+    }
+    ChatSession {
+        int id PK
+        string session_id UK
+        string student_name
+        string title
+        datetime created_at
+        datetime updated_at
+    }
+    AILog {
+        int id PK
+        string feature_type
+        json input_data
+        json output_data
+        int tokens_used
+        float latency_ms
+        datetime created_at
+    }
+    Lesson ||--o{ Enrollment : "contains"
+    Instructor ||--o{ Lesson : "teaches"
+    Lesson {
+        int id PK
+        int instructor_id FK
+        string name
+        string sport_type
+        string level
+        string description
+    }
+    Instructor {
+        int id PK
+        string name
+        string bio
+    }
+    Enrollment {
+        int id PK
+        int lesson_id FK
+        string student_name
+        string status
+        float attendance_rate
+    }
+    FAQ {
+        int id PK
+        string category
+        string question
+        string answer
+    }
+    Knowledge {
+        int id PK
+        string file_name
+        string content
+        vector embedding "pgvector(1536)"
+    }
+```
 
-체육시설 데이터는 외부 KSPO API 호출이라 로컬 모델 없음.
+체육시설 및 구글 캘린더 데이터는 외부 API 호출 방식이라 로컬 DB에 테이블 없음.
 
+---
 
 ## 배포
 
-### Railway (백엔드)
+### Railway (백엔드 및 MCP 서버)
 
 | 서비스 | 역할 | 노출 |
 |---|---|---|
 | `pgvector` | Postgres + pgvector 확장 | internal only |
-| `course-agent` | FastAPI 본체 | public (도메인 자동 부여) |
-| `facility-mcp` | MCP 서버 | internal only (`facility-mcp.railway.internal:8001`) |
+| `course-agent` | FastAPI 본체 | public |
+| `facility-mcp` | 시설 검색 MCP 서버 | internal only (`facility-mcp.railway.internal:8001`) |
+| `calendar-mcp` | 캘린더 MCP 서버 | internal only (`calendar-mcp.railway.internal:8002`) |
 
 GitHub `main` 브랜치 push 시 Railway가 Dockerfile 기반으로 자동 빌드·재배포.
-
-### Vercel (프론트엔드)
-
-`main` 브랜치 push 시 자동 배포. `VITE_*` 환경변수는 Vercel 대시보드에 등록 (`VITE_API_URL`, `VITE_GATE_PASSWORD`).
-

@@ -18,7 +18,32 @@ Course Agent의 `facility_agent`가 HTTP MCP 클라이언트로 이 서버를 �
 - 26개 원본 필드 중 12개로 정규화하여 반환
 
 ## 아키텍처
-<img width="1440" height="1200" alt="image" src="https://github.com/user-attachments/assets/54309e0c-c8aa-4e7a-9618-ed2945fd047c" />
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Course Agent Client<br>(mcp_client.py)
+    participant Server as Facility MCP Server<br>(main.py)
+    participant Cache as TTLCache & Lock<br>(cache.py)
+    participant API as KSPO API (External)
+
+    Client->>Server: search_facilities(params...)
+    Server->>Cache: 캐시 조회 (Key = params...)
+    alt 캐시 히트 (Cache Hit)
+        Cache-->>Server: 캐싱된 시설 목록 반환
+    else 캐시 미스 (Cache Miss)
+        Server->>Cache: asyncio.Lock 획득 (key 기준 동시 요청 방지)
+        Server->>API: HTTP GET (KSPO API)
+        API-->>Server: 체육시설 원본 XML/JSON 데이터
+        Server->>Server: 26개 필드 ➡️ 12개 필드로 정규화 & 폐업 필터링
+        opt user_lat & user_lng 제공 시
+            Server->>Server: Haversine 거리 계산 및 정렬
+        end
+        Server->>Cache: TTLCache 저장 (TTL: 10분)
+        Server->>Cache: asyncio.Lock 해제
+    end
+    Server-->>Client: 정규화된 시설 목록 (JSON)
+```
 
 
 ## 기술 스택

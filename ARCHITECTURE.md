@@ -1,32 +1,62 @@
 # Architecture
 
 ## 시스템 구성
-<img width="1440" height="1040" alt="image" src="https://github.com/user-attachments/assets/7dfce89c-782e-4239-9f34-93cb65ab95e9" />
 
-<br>
+```mermaid
+graph TD
+    Client[React Client (Vite) - Port 5173] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
+    Server <== SQLAlchemy ==> DB[(PostgreSQL + pgvector)]
+    Server <== FastMCP Client ==> FacilityMCP[Facility MCP Server - Port 8001]
+    Server <== FastMCP Client ==> CalendarMCP[Calendar MCP Server - Port 8002]
+    
+    FacilityMCP <== HTTP ==> KSPO[KSPO 공공 체육시설 API]
+    CalendarMCP <== HTTP ==> Google[Google Calendar API]
+```
 
-| 서비스 | 노출 |
-|---|---|
-| course-agent | public |
-| pgvector | internal |
-| facility-mcp | internal |
+| 서비스 | 노출 | Internal DNS |
+|---|---|---|
+| `course-agent` | public | - |
+| `pgvector` | internal | `pgvector.railway.internal:5432` |
+| `facility-mcp` | internal | `facility-mcp.railway.internal:8001` |
+| `calendar-mcp` | internal | `calendar-mcp.railway.internal:8002` |
 
-서비스 간 통신은 Railway internal DNS (`facility-mcp.railway.internal:8001`).
+서비스 간 통신은 Railway internal DNS를 활용하여 안전하게 내부 망으로 연결됩니다.
 
 
 ## 멀티에이전트 그래프
-<img width="1440" height="1440" alt="image" src="https://github.com/user-attachments/assets/5ee3dbc9-10d8-4b8b-bf37-7e73299da626" />
 
-<br>
+```mermaid
+graph TD
+    User([사용자 입력]) --> Supervisor[Supervisor: 의도 분석 & 플랜 수립]
+    Supervisor --> Dispatcher{Dispatcher: 다음 노드 선택}
+    
+    Dispatcher --> Lesson[lesson_agent: 강습 DB 조회/신청]
+    Dispatcher --> Enrollment[enrollment_agent: 수강 현황/추천]
+    Dispatcher --> FAQ[faq_agent: FAQ RAG 검색]
+    Dispatcher --> Facility[facility_agent: 체육시설 MCP 연동]
+    Dispatcher --> Calendar[calendar_agent: 구글 캘린더 MCP 연동]
+    
+    Lesson --> Aggregator[Aggregator: 결과 검증]
+    Enrollment --> Aggregator
+    FAQ --> Aggregator
+    Facility --> Aggregator
+    Calendar --> Aggregator
+    
+    Aggregator --> |is_valid = True| Response[Response: 자연어 스트리밍 응답 생성]
+    Aggregator --> |is_valid = False & Reroute| Reroute[Reroute Supervisor: Heuristic 백업 매핑]
+    
+    Reroute --> Dispatcher
+    Response --> END([종료])
+```
 
 | 노드 | 역할 |
 |---|---|
 | Supervisor | LLM 의도 분류 → `routing_mode`, `agent_plan` 결정 |
-| Dispatcher | passthrough, 조건부 엣지로 다음 에이전트 라우팅 |
-| Sub-agent | 도메인 도구 실행, `agent_outputs[name]` 기록 |
-| Aggregator | 결과 검증(`is_valid`), `current_agent_index++` |
-| Reroute Supervisor | 휴리스틱 매핑으로 새 에이전트 추가 |
-| Response | 최종 자연어 응답 (SSE 토큰 스트리밍) |
+| Dispatcher | 조건부 엣지를 이용하여 각 에이전트로 순차 라우팅 |
+| Sub-agent | 도메인별 도구 실행 및 DB/MCP 호출 후 `agent_outputs[name]` 기록 |
+| Aggregator | 에이전트의 출력이 유효한지 검증(`is_valid`) 및 인덱스 제어 |
+| Reroute Supervisor | 휴리스틱 매핑 테이블을 기반으로 실패한 에이전트를 위한 대체 에이전트 계획 수립 |
+| Response | 최종 통합된 정보를 바탕으로 자연어 응답 생성 (SSE 스트리밍) |
 
 <br>
 
@@ -35,12 +65,13 @@
 **트리거**: `single_agent` AND `is_valid=False` AND `rerouting_count==0`
 
 **휴리스틱 매핑** (LLM 미사용):
-lesson     → faq
-faq        → lesson
-enrollment → lesson
-facility   → lesson
+- `lesson`     → `faq`
+- `faq`        → `lesson`
+- `enrollment` → `lesson`
+- `facility`   → `lesson`
+- `calendar`   → `lesson`
 
-1회만 발동. 재라우팅 후 실패하면 그대로 Response.
+1회만 발동하며, 재라우팅된 에이전트 실행 후에도 실패하면 그대로 Response 노드로 진행합니다.
 
 **예시**: "야구 입문반 있어?"
 Supervisor → single_agent: [lesson]
@@ -54,19 +85,26 @@ tool_used: "lesson,faq"
 
 ## MCP 양방향
 
-### 서버 (`mcp_servers/facility_server/`)
-FastMCP로 `search_facilities` 도구 노출. 내부 흐름: KSPO API 호출 → 응답 정규화 → (좌표 시) haversine 거리 정렬 → TTL 캐시.
+### 서버
+
+1. **Facility MCP Server (`mcp_servers/facility_server/`)**
+   - FastMCP로 `search_facilities` 도구 노출.
+   - 내부 흐름: KSPO API 호출 ➡️ 응답 정규화 ➡️ (사용자 위경도 제공 시) haversine 거리 기반 정렬 ➡️ TTL 캐시 적용.
+2. **Calendar MCP Server (`mcp_servers/calendar_server/`)**
+   - FastMCP로 `quick_add_event`, `list_events` 도구 노출.
+   - 내부 흐름: Google Calendar API 호출 ➡️ 사용자 캘린더 연동 ➡️ 이벤트 생성 및 조회.
 
 ### 클라이언트 (`server/app/services/ai/mcp_client.py`)
-`fastmcp.Client`로 facility-mcp의 `search_facilities` 호출. URL은 환경별로:
 
-| 환경 | FACILITY_MCP_URL |
-|---|---|
-| 로컬 개별 실행 | `http://localhost:8001/mcp` |
-| 로컬 docker-compose | `http://facility-mcp:8001/mcp` |
-| Railway 프로덕션 | `http://facility-mcp.railway.internal:8001/mcp` |
+`fastmcp.Client`를 싱글톤 패턴으로 관리하여 각각의 MCP 서버에 연결합니다. 환경별 접속 URL 정보는 다음과 같습니다.
 
-MCP 호출 실패 시 예외 → `make_subagent` 표준 실패 경로 → 재라우팅 발동.
+| 환경 | FACILITY_MCP_URL | CALENDAR_MCP_URL |
+|---|---|---|
+| 로컬 개별 실행 | `http://localhost:8001/mcp` | `http://localhost:8002/mcp` |
+| 로컬 docker-compose | `http://facility-mcp:8001/mcp` | `http://calendar-mcp:8002/mcp` |
+| Railway 프로덕션 | `http://facility-mcp.railway.internal:8001/mcp` | `http://calendar-mcp.railway.internal:8002/mcp` |
+
+MCP 호출 실패 시 예외를 발생시켜 `make_subagent` 표준 실패 경로를 태우고, 재라우팅 정책이 자연스럽게 작동하도록 합니다.
 
 <br>
 
@@ -94,7 +132,45 @@ done    tools_used=["lesson"], total_tokens=1234
 ```
 
 ## 파일별 실행 흐름
-<img width="1440" height="1960" alt="image" src="https://github.com/user-attachments/assets/1c1149ca-a514-460d-b534-9c1485787bee" />
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client (React)
+    participant main as server/app/main.py
+    participant router as app/routers/chat.py
+    participant service as app/services/chat_service.py
+    participant graph as app/services/ai/agent_graph.py
+    participant supervisor as app/services/ai/supervisor_node.py
+    participant agents as app/services/ai/agents/<br>(lesson/enroll/faq/facility/calendar)
+    participant mcp as app/services/ai/mcp_client.py
+    participant db as DB (Postgres/pgvector/RAG)
+
+    Client ->> main: HTTP POST /api/chat/stream
+    main ->> router: 라우트
+    router ->> service: chat_stream() / _run_multi_agent_stream()
+    service ->> graph: build_multi_agent_graph()
+    graph ->> supervisor: supervisor_node()
+    supervisor -->> service: [SSE] supervisor_done 이벤트 전송
+    
+    loop 에이전트 실행 계획 순차 수행
+        graph ->> agents: 각 에이전트 실행 (인자 추출 및 실행)
+        alt 로컬 DB 조회 에이전트
+            agents ->> db: DB Query
+            db -->> agents: 조회 데이터
+        else 외부 MCP 연동 에이전트 (시설/캘린더)
+            agents ->> mcp: call_tool()
+            mcp -->> agents: MCP 결과 데이터
+        end
+        graph ->> supervisor: aggregator_node() 검증 및 인덱스 증가
+        alt 검증 실패 시 자가 수정 (1회)
+            supervisor ->> supervisor: reroute_supervisor_node() 계획 재수립
+        end
+    end
+    
+    graph ->> service: 최종 완료 상태 전달
+    service ->> Client: SSE token 스트리밍 & done 이벤트
+```
 
 
 
@@ -104,12 +180,14 @@ done    tools_used=["lesson"], total_tokens=1234
 |---|---|
 | `server/app/services/ai/agent_graph.py` | 그래프 빌더, 조건부 분기 |
 | `server/app/services/ai/agent_state.py` | TypedDict 스키마 |
-| `server/app/services/ai/supervisor_node.py` | Supervisor + Aggregator + Reroute |
+| `server/app/services/ai/supervisor_node.py` | Supervisor + Aggregator + reroute_supervisor |
 | `server/app/services/ai/agents/base.py` | `make_subagent` 팩토리 |
-| `server/app/services/ai/agents/{lesson,enrollment,faq,facility}_agent.py` | 4개 서브에이전트 |
-| `server/app/services/ai/mcp_client.py` | facility-mcp 호출 |
+| `server/app/services/ai/agents/{lesson,enrollment,faq,facility,calendar}_agent.py` | 5개 도메인 서브에이전트 |
+| `server/app/services/ai/mcp_client.py` | facility / calendar MCP 호출 클라이언트 |
 | `server/app/services/chat_service.py` | `_run_multi_agent_stream` |
-| `mcp_servers/facility_server/app/main.py` | FastMCP 진입점 |
-| `mcp_servers/facility_server/app/tools/facility.py` | `search_facilities` 도구 |
-| `mcp_servers/facility_server/app/kspo_client.py` | KSPO API + 정규화 |
-| `mcp_servers/facility_server/app/cache.py` | TTL 캐시 |
+| `mcp_servers/facility_server/app/main.py` | Facility FastMCP 진입점 |
+| `mcp_servers/facility_server/app/tools/facility.py` | `search_facilities` 도구 구현 |
+| `mcp_servers/facility_server/app/kspo_client.py` | KSPO API + 응답 정규화 |
+| `mcp_servers/facility_server/app/cache.py` | TTL 캐시 및 중복 호출 잠금 |
+| `mcp_servers/calendar_server/app/main.py` | Calendar FastMCP 진입점 및 도구 등록 |
+| `mcp_servers/calendar_server/app/config.py` | Calendar 설정 및 Pydantic Settings |
