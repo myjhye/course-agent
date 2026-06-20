@@ -96,6 +96,13 @@ async def list_calendar_events(
         max_results: 최대 결과 개수 (기본 10)
     """
     service = get_calendar_service()
+    
+    # time_min이 주어지지 않은 경우 기본적으로 현재 시각(KST) 이후의 일정을 조회하도록 함
+    if not time_min:
+        import datetime
+        tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+        time_min = datetime.datetime.now(tz_kst).isoformat()
+
     events_result = service.events().list(
         calendarId=settings.google_calendar_id,
         timeMin=time_min,
