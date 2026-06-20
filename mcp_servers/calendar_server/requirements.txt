@@ -1,0 +1,7 @@
+mcp
+fastmcp>=0.4.1
+google-auth
+google-auth-httplib2
+google-api-python-client
+pydantic-settings
+python-dotenv

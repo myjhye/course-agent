@@ -43,4 +43,32 @@ class FacilityMcpClient:
             return await client.call_tool(tool_name, arguments)
 
 
+class CalendarMcpClient:
+    """calendar MCP 서버 호출 전용 클라이언트."""
+
+    def __init__(self, url: Optional[str] = None, timeout: Optional[float] = None):
+        self.url = url or settings.calendar_mcp_url
+        self.timeout = timeout or settings.calendar_mcp_timeout_seconds
+
+    def is_configured(self) -> bool:
+        """URL이 설정됐는지 확인. False면 호출 시도하지 말 것."""
+        return bool(self.url)
+
+    async def call_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> Any:
+        """
+        calendar MCP 서버의 tool을 호출한다.
+        """
+        if not self.is_configured():
+            raise RuntimeError("CALENDAR_MCP_URL is not configured")
+
+        async with Client(self.url, timeout=self.timeout) as client:
+            return await client.call_tool(tool_name, arguments)
+
+
 facility_mcp_client = FacilityMcpClient()
+calendar_mcp_client = CalendarMcpClient()
+

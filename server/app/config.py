@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     facility_mcp_url: Optional[str] = None
     facility_mcp_timeout_seconds: float = 10.0
 
+    # Calendar MCP Server
+    calendar_mcp_url: Optional[str] = None
+    calendar_mcp_timeout_seconds: float = 10.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",

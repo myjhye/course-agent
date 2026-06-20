@@ -27,8 +27,8 @@ def should_route_from_supervisor(state: AgentState) -> Literal["dispatcher", "re
 
 def should_dispatch_agent(
     state: AgentState,
-) -> Literal["lesson", "enrollment", "faq", "facility", "aggregator"]:
-    # dispatcher 이후 "그럼 어느 에이전트야" (5가지 선택: lesson, enrollment, faq, facility, aggregator)
+) -> Literal["lesson", "enrollment", "faq", "facility", "calendar", "aggregator"]:
+    # dispatcher 이후 "그럼 어느 에이전트야" (6가지 선택: lesson, enrollment, faq, facility, calendar, aggregator)
 
     # supervisor가 써놓은 에이전트 실행 계획 읽기 (예: ["lesson", "faq"])
     plan = state.get("agent_plan") or []
@@ -45,7 +45,7 @@ def should_dispatch_agent(
     # 예: plan = ["lesson", "faq"], idx = 0 → nxt = "lesson"
     nxt = plan[idx]
 
-    if nxt not in {"lesson", "enrollment", "faq", "facility"}:
+    if nxt not in {"lesson", "enrollment", "faq", "facility", "calendar"}:
         # 꺼낸 이름이 알 수 없는 에이전트면 aggregator로 (방어 처리)
         # supervisor가 잘못된 이름을 써놨을 경우 대비
         return "aggregator"
@@ -93,12 +93,13 @@ def build_multi_agent_graph():
 
     from app.services.ai.agent_nodes import response_node
 
-    # 4개 서브에이전트 함수 임포트
+    # 5개 서브에이전트 함수 임포트
     from app.services.ai.agents import (
         enrollment_agent,
         facility_agent,
         faq_agent,
         lesson_agent,
+        calendar_agent,
     )
 
     # supervisor, aggregator, reroute 함수 임포트
@@ -125,6 +126,7 @@ def build_multi_agent_graph():
     g.add_node("enrollment", enrollment_agent)  # 수강 현황
     g.add_node("faq", faq_agent)  # FAQ 검색
     g.add_node("facility", facility_agent)  # 체육시설 검색 (MCP)
+    g.add_node("calendar", calendar_agent)  # 구글 캘린더 일정 관리 (MCP)
     g.add_node("aggregator", aggregator_node)  # 결과 수집 및 유효성 확인
     g.add_node("reroute_supervisor", reroute_supervisor_node)  # 실패 시 재계획
     g.add_node("response", response_node)  # 최종 응답 생성
@@ -149,13 +151,14 @@ def build_multi_agent_graph():
             "enrollment": "enrollment", # should_dispatch_agent가 "enrollment" 반환 → enrollment 노드로
             "faq": "faq", # should_dispatch_agent가 "faq" 반환 → faq 노드로
             "facility": "facility", # should_dispatch_agent가 "facility" 반환 → facility 노드로
+            "calendar": "calendar", # should_dispatch_agent가 "calendar" 반환 → calendar 노드로
             "aggregator": "aggregator", # should_dispatch_agent가 "aggregator" 반환 → aggregator 노드로
         },
     )
 
-    # 4개 에이전트 → aggregator 고정 연결
+    # 5개 에이전트 → aggregator 고정 연결
     # 에이전트 실행 끝나면 항상 aggregator로 감. 조건 없음
-    for agent_name in ("lesson", "enrollment", "faq", "facility"):
+    for agent_name in ("lesson", "enrollment", "faq", "facility", "calendar"):
         g.add_edge(agent_name, "aggregator")
 
     g.add_conditional_edges(

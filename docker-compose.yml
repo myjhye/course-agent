@@ -10,6 +10,17 @@ services:
       - "8001"
     restart: unless-stopped
 
+  calendar-mcp:
+    build:
+      context: ./mcp_servers/calendar_server
+      dockerfile: Dockerfile
+    container_name: course-agent-calendar-mcp
+    env_file:
+      - ./mcp_servers/calendar_server/.env
+    expose:
+      - "8002"
+    restart: unless-stopped
+
   course-agent:
     build:
       context: ./server
@@ -19,9 +30,12 @@ services:
       - ./server/.env
     environment:
       FACILITY_MCP_URL: http://facility-mcp:8001/mcp
+      CALENDAR_MCP_URL: http://calendar-mcp:8002/mcp
     ports:
       - "8000:8000"
     depends_on:
       - facility-mcp
+      - calendar-mcp
     restart: unless-stopped
+
 

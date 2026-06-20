@@ -31,9 +31,10 @@ _SUPERVISOR_PROMPT = """당신은 Course Agent의 Supervisor 에이전트입니�
 에이전트 역할
 
 lesson: Course Agent 플랫폼의 강습 검색·상세 (강습 목록, 시간표, 강사 정보)
-enrollment: 로그인 사용자의 수강 현황 조회 또는 맞춤 추천
+enrollment: 로그인 사용자의 수강 신청 처리, 수강 신청 성공 결과 보고, 내 수강 목록/출석률 조회 또는 플랫폼 추천 강습 조회
 faq: 환불/결제/이용 방법/가능 여부 등 정보성 질문 (RAG)
 facility: 근처 공공 체육시설 검색 (지역·좌표 기반, 외부 API)
+calendar: 구글 캘린더 일정 관리 (구글 캘린더에 예약 등록, 일정 생성, 캘린더 조회, 또는 내일/금주의 스케줄 확인)
 
 분류 기준
 
@@ -44,18 +45,19 @@ multi_agent: 두 영역 이상의 정보가 동시에 필요한 경우
 → ["lesson", "facility"]
 주의: "내 수강 현황 보여주고 다음 단계 추천해줘"는 enrollment 하나로 처리 가능 → single_agent
 
-판단 시 유의
+판단 시 유의 (중요)
 
-"~해도 될까?", "~할 수 있나?" 같은 가능 여부 질문은 faq로 분류 (강습 검색 아님)
-종목 + 지역이 함께 나오고 "근처", "주변", "어디", "가까운" 등이 있으면 공공 체육시설 검색 에이전트가 필요할 수 있음
-단순 "추천해줘"는 enrollment (플랫폼 내 추천)
-"근처 수영장", "가까운 체육관" 등은 공공 체육시설 검색 에이전트
+1. "캘린더", "일정", "스케줄", "달력", "예약 확인/등록" 등의 단어가 메시지에 포함되거나, 특정 일시(예: '내일 10시', '금요일 3시')를 지정해 일정을 기록/조회하려는 흐름은 반드시 calendar 에이전트로 라우팅하세요.
+   - 예: "내일 일정 알려줘", "내일 스케줄 확인해줘", "금요일 3시에 테니스 일정 등록해줘" -> calendar 단일 에이전트
+2. 단순히 플랫폼 내 특정 스포츠 강습 과목을 신청/등록하려는 질문(예: '수영 초급반 등록해줘', '수강 신청해줘')은 enrollment 에이전트로 보냅니다.
+3. "~해도 될까?", "~할 수 있나?" 같은 규정 가능 여부 질문은 faq로 분류 (강습 검색 아님)
+4. 종목 + 지역이 함께 나오고 "근처", "주변", "어디", "가까운" 등이 있으면 공공 체육시설 검색 에이전트(facility)가 필요할 수 있음
 
 출력 형식
 반드시 아래 JSON만 응답하세요.
 {
   "mode": "single_agent" | "multi_agent" | "direct_response",
-  "agents": ["lesson", "facility"],
+  "agents": ["lesson", "facility", "calendar"],
   "reason": "판단 이유 한 줄"
 }
 
@@ -137,7 +139,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
             mode = "direct_response"
 
         # 허용된 에이전트 목록
-        valid_agents = {"lesson", "enrollment", "faq", "facility"}
+        valid_agents = {"lesson", "enrollment", "faq", "facility", "calendar"}
 
         # 중복 제거 + 허용된 에이전트만 필터 (GPT가 잘못된 값 반환할 수 있어서 방어 처리)
         seen = set()
@@ -268,6 +270,7 @@ _REROUTE_MAP = {
     "faq": "lesson", # faq 실패 → lesson으로 재시도
     "enrollment": "lesson", # enrollment 실패 → lesson으로 재시도
     "facility": "lesson", # facility 실패 → lesson으로 재시도
+    "calendar": "lesson", # calendar 실패 → lesson으로 재시도
 }
 
 

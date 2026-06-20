@@ -63,3 +63,7 @@ alembic/versions/*.pyc
 
 server/static/thumbnails/
 
+# Custom project documentation files
+PROJECT_OVERVIEW.md
+PORTFOLIO.md
+BLOG_POST.md

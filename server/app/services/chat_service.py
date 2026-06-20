@@ -1,17 +1,36 @@
 """
-채팅 서비스.
+chat.py(컨트롤러)에서 호출되는 서비스 레이어. 전체 흐름을 조율하는 오케스트레이터.
 
-세션 관리, 메시지 저장, LangGraph 에이전트 실행을 조율한다.
-비스트리밍(chat)과 SSE 스트리밍(chat_stream) 두 가지 경로를 제공하며,
-AI 파이프라인 실행은 각 경로별 내부 메서드(_run_agent_graph / _run_agent_graph_stream)에서 담당한다.
+직접 처리:
+- 세션 DB 조회, 생성, 저장
+- 사용자 메시지 및 AI 응답 DB 저장
+- AI 사용 로그(토큰, 레이턴시 등) DB 저장
+- Langfuse Trace 및 Span 관리
+- chat() 비스트리밍 진입점 운영
+- chat_stream() 스트리밍 진입점 및 SSE 이벤트 생성
 
-주요 메서드:
-- chat()                          : 비스트리밍 채팅 진입점. AI 응답이 다 만들어지면 한 번에 반환.
-- chat_stream()                   : 스트리밍 채팅 진입점. 토큰이 생길 때마다 브라우저로 바로 전송.
-- _build_initial_state()          : 두 경로가 공통으로 쓰는 에이전트 초기 상태값 생성.
-- _run_agent_graph()              : 비스트리밍용 그래프 실행. 모든 노드가 끝난 뒤 결과를 한 번에 반환.
-- _run_agent_graph_stream()       : 스트리밍용 Langfuse 측정 구간을 열고 실제 실행을 inner에 넘기는 래퍼.
-- _run_agent_graph_stream_inner() : 실제 스트리밍 실행부. 멀티에이전트 수동 오케스트레이션(_run_multi_agent_stream)으로 토큰을 전송.
+AI 로직 실행 방식:
+
+1. 비스트리밍 경로 (chat):
+- build_multi_agent_graph() → agent_graph.py로 그래프 통째로 실행 (ainvoke)
+- supervisor, 에이전트, aggregator, response 노드를 LangGraph가 자동으로 순서대로 실행
+
+2. 스트리밍 경로 (chat_stream):
+- _run_agent_graph_stream()       → Langfuse span 열고 inner에 실행 위임
+- _run_agent_graph_stream_inner() → state에 DB 주입하고 _run_multi_agent_stream 호출
+- _run_multi_agent_stream()       → 수동 오케스트레이션 (내부 함수)
+  - supervisor_node()                      → supervisor_node.py    (질문 분석, 에이전트 계획 수립)
+  - lesson/enrollment/faq/facility_agent() → agents/               (각 도메인 실제 검색 실행)
+  - aggregator_node()                      → supervisor_node.py    (에이전트 결과 수집, 성공/실패 판정)
+  - response_node_stream()                 → agent_nodes.py        (GPT 최종 자연어 응답 생성)
+
+두 경로 모두 내부적으로 이 순서로 동작한다:
+1. 세션 생성/조회
+2. 사용자 메시지 DB 저장
+3. 이전 대화 히스토리 로드
+4. LangGraph 에이전트 실행 (supervisor → 서브에이전트 → response)
+5. AI 응답 DB 저장
+6. 응답 반환
 """
 
 import json
@@ -216,21 +235,9 @@ class ChatService:
         user_message: str,
         student_name: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
-        """
-        SSE 스트리밍 채팅.
-        각 단계마다 event를 yield한다.
-
-        이벤트 종류:
-        - {"event": "status", "data": {"step": "supervisor", "message": "..."}}
-        - {"event": "status", "data": {"step": "supervisor_done", "mode": "...", "agents": [...]}}
-        - {"event": "status", "data": {"step": "agent_start", "agent": "lesson|enrollment|faq|facility", "message": "..."}}  # 재라우팅 시 rerouted: true
-        - {"event": "status", "data": {"step": "agent_done", "agent": "...", "success": true|false}}  # 재라우팅 시 rerouted: true
-        - {"event": "status", "data": {"step": "reroute", "from": "...", "message": "..."}}
-        - {"event": "status", "data": {"step": "response", "message": "..."}}
-        - {"event": "token", "data": {"content": "..."}}
-        - {"event": "done", "data": {"tools_used": [...], "total_tokens": ..., "message_id": ...}}
-        - {"event": "error", "data": {"message": "..."}}
-        """
+        # 스트리밍 채팅 진입점
+        # 토큰 생길 때마다 브라우저로 바로 전송 (타이핑 효과)
+        # chat.py 라우터의 POST /stream 엔드포인트에서 호출
 
         # 전체 처리 시간 측정 시작 (비스트리밍과 동일한 기준으로 모니터링하기 위함)
         start_time = time.time()
@@ -247,19 +254,19 @@ class ChatService:
             # 3. 세션 제목 설정
             await ChatService.update_session_title(db, session_id, user_message)
 
-            # 4. 대화 히스토리 조회
+            # 4. 대화 히스토리 조회 (GPT 맥락 제공용)
             history = await ChatService.get_recent_messages(
                 db, session_id, limit=10
             )
 
-            # 스트리밍 중 토큰을 누적할 변수들 초기화
+            # 스트리밍 끝나고 DB 저장할 때 쓸 변수들 초기화
             full_response = ""
             tools_used: List[str] = []
             all_tool_results: dict = {}
             total_tokens: int = 0
 
-            # 5. AI 파이프라인 실행 - 이벤트 타입별로 분기해서 브라우저로 전달
-            # LangGraph 스트림에서 단계/토큰/최종 결과 이벤트를 순차적으로 소비한다
+            # 5. AI 파이프라인 실행
+            # _run_agent_graph_stream이 supervisor → 에이전트 → response 순으로 이벤트 yield
             async for event in ChatService._run_agent_graph_stream(
                 db,
                 user_message,
@@ -299,7 +306,7 @@ class ChatService:
                 tool_result=all_tool_results if all_tool_results else None,
             )
 
-            # 7. AI 사용 로그 저장
+            # 7. AI 사용 로그 저장 (관리자 대시보드 모니터링용)
             latency_ms = (time.time() - start_time) * 1000
             ai_log = AILog(
                 feature_type="chat_stream",
@@ -381,27 +388,20 @@ class ChatService:
         history: List[ChatMessage],
         student_name: Optional[str]
     ) -> Tuple[List[str], dict, str, Optional[int]]:
-        """
-        비스트리밍 채팅 전용 LangGraph Agent 실행.
-        chat()에서만 호출되며, compiled.ainvoke()로 결과를 한 번에 반환한다.
-        스트리밍 경로는 _run_agent_graph_stream()을 사용한다.
+        # 비스트리밍 전용 LangGraph 그래프 실행
+        # chat()에서만 호출. ainvoke()로 모든 노드 실행 완료 후 결과 한 번에 반환
+        # 스트리밍은 _run_agent_graph_stream() 사용
 
-        Returns:
-            - tools_used: 사용된 도구 목록
-            - all_tool_results: 모든 도구 실행 결과
-            - assistant_content: 최종 응답
-            - tokens_used: 총 토큰 사용량
-        """
-
+        # 그래프에 넘길 초기 state 생성
         initial_state = ChatService._build_initial_state(
             user_message, student_name, history
         )
 
         try:
             async def _execute_graph(state: AgentState) -> AgentState:
-                state["_db"] = db
-                compiled = build_multi_agent_graph()
-                return await compiled.ainvoke(state)
+                state["_db"] = db # 서브에이전트가 DB 조회할 수 있도록 state에 주입
+                compiled = build_multi_agent_graph() # 그래프 조립 (agent_graph.py)
+                return await compiled.ainvoke(state) # 그래프 전체 실행 (supervisor → 에이전트 → response)
 
             langfuse = get_langfuse()
 
@@ -485,11 +485,11 @@ class ChatService:
         history: List[ChatMessage],
         student_name: Optional[str],
     ) -> AsyncGenerator[dict, None]:
-        """
-        Langfuse 루트 span을 열고 _run_agent_graph_stream_inner를 실행한다.
-        전체 AI 파이프라인을 하나의 span으로 묶어 Langfuse에서 end-to-end 추적이 가능하게 한다.
-        """
+        # 스트리밍 전용 LangGraph 그래프 실행
+        # Langfuse span 열고 _run_agent_graph_stream_inner에 실제 실행 위임
+        # _run_agent_graph의 스트리밍 버전
 
+        # 그래프에 넘길 초기 state 생성
         initial_state = ChatService._build_initial_state(
             user_message, student_name, history
         )
@@ -498,7 +498,7 @@ class ChatService:
 
         try:
             if langfuse:
-                # 스트리밍 버전 전용 루트 span
+                # Langfuse가 있으면 전체 스트리밍 실행을 하나의 루트 span으로 감쌈
                 with langfuse.start_as_current_observation(
                     as_type="span",
                     name="chat-agent-stream",
@@ -542,22 +542,25 @@ class ChatService:
         initial_state: AgentState,
         root_span,
     ) -> AsyncGenerator[dict, None]:
-        """
-        SSE 스트리밍으로 멀티에이전트 파이프라인을 실행한다.
-        Supervisor → 서브에이전트 → Aggregator → response_node_stream 순으로
-        _run_multi_agent_stream에서 오케스트레이션한다.
-        """
+        # _run_agent_graph_stream의 실제 실행부
+        # state에 DB 주입하고 _run_multi_agent_stream에 실행 위임
+        # 이벤트 그대로 위로 올려보냄
 
+        # 서브에이전트가 DB 조회할 수 있도록 state에 주입
         state: AgentState = dict(initial_state)
         state["_db"] = db
+
+        # _run_multi_agent_stream이 supervisor → 에이전트 → response 순으로 실행하며 이벤트 yield
+        # 여기서는 그걸 그대로 위로 올려보내기만 함
         async for ev in ChatService._run_multi_agent_stream(state, db, root_span):
             yield ev
 
     _AGENT_STATUS_MESSAGES: dict[str, str] = {
-        "lesson": "강습 정보 찾는 중...",
-        "enrollment": "수강 현황 확인 중...",
-        "faq": "관련 정보 찾는 중...",
-        "facility": "체육시설 찾는 중...",
+        "lesson": "강습 정보 찾는 중...", # lesson_agent 실행 중 프론트에 표시할 메시지
+        "enrollment": "수강 현황 확인 중...", # enrollment_agent 실행 중
+        "faq": "관련 정보 찾는 중...", # faq_agent 실행 중
+        "facility": "체육시설 찾는 중...", # facility_agent 실행 중
+        "calendar": "일정 확인 및 등록 중...", # calendar_agent 실행 중
     }
 
     @staticmethod
@@ -566,47 +569,44 @@ class ChatService:
         db: AsyncSession,
         root_span,
     ) -> AsyncGenerator[dict, None]:
-        """
-        멀티에이전트 흐름을 수동 오케스트레이션으로 스트리밍한다.
-
-        구조:
-          1. supervisor_node 실행 (LLM, 토큰 사용)
-          2. routing_mode에 따라 분기
-             - direct_response: 바로 response_node_stream
-             - single_agent/multi_agent: agent_plan 순회하며 각 에이전트 실행,
-               매 회차마다 aggregator_node로 state 갱신
-          3. response_node_stream으로 최종 응답 스트리밍
-
-        각 단계에서 status 이벤트를 yield하여 프론트 로딩 UX를 유지한다.
-        에이전트 실행 자체는 make_subagent가 반환한 함수 호출로 이루어지며,
-        함수 반환 dict를 state에 merge하는 방식으로 langgraph ainvoke와 동일한 의미론을 수동 재현한다.
-        """
+        # 스트리밍 경로의 실제 핵심 함수
+        # LangGraph ainvoke 대신 수동으로 supervisor → 에이전트 → response 순서로 실행
+        # 각 단계마다 status 이벤트를 yield해서 프론트에 "의도 분석 중...", "검색 중..." 표시
+        
+        # 함수 안에서 임포트하는 이유: 순환 임포트 방지
         from app.services.ai.agents import (
             enrollment_agent,
             facility_agent,
             faq_agent,
             lesson_agent,
+            calendar_agent,
         )
         from app.services.ai.supervisor_node import (
             aggregator_node,
             reroute_supervisor_node,
             supervisor_node,
         )
-
+        
+        # 에이전트 이름 → 함수 매핑 (supervisor가 반환한 agent_plan 이름으로 실행)
         _AGENT_REGISTRY = {
             "lesson": lesson_agent,
             "enrollment": enrollment_agent,
             "faq": faq_agent,
             "facility": facility_agent,
+            "calendar": calendar_agent,
         }
 
+        # 프론트에 "의도 분석 중..." 표시
         yield {
             "type": "status",
             "data": {"step": "supervisor", "message": "의도 분석 중..."},
         }
+
+        # supervisor 실행 → routing_mode, agent_plan을 state에 저장
         supervisor_result = await supervisor_node(state)
         state.update(supervisor_result)
 
+        # supervisor 완료 → 어떤 모드로 어떤 에이전트 실행할지 프론트에 전달
         yield {
             "type": "status",
             "data": {
@@ -620,11 +620,14 @@ class ChatService:
         mode = state.get("routing_mode", "direct_response")
 
         if mode != "direct_response":
+            # single_agent or multi_agent일 때만 에이전트 실행
+            # direct_response면 이 블록 건너뛰고 바로 response로
             for idx, agent_name in enumerate(plan):
                 agent_fn = _AGENT_REGISTRY.get(agent_name)
                 if agent_fn is None:
                     continue
 
+                # 프론트에 "강습 정보 찾는 중..." 등 표시
                 yield {
                     "type": "status",
                     "data": {
@@ -636,14 +639,18 @@ class ChatService:
                     },
                 }
 
+                # 현재 실행 중인 에이전트 인덱스 state에 기록
                 state["current_agent_index"] = idx
 
+                # 에이전트 실행 → 결과 state에 저장
                 agent_result = await agent_fn(state)
                 state.update(agent_result)
 
+                # aggregator 실행 → is_valid 판정, 인덱스 증가
                 agg_result = aggregator_node(state)
                 state.update(agg_result)
 
+                # 에이전트 완료 → 성공/실패 여부 프론트에 전달
                 yield {
                     "type": "status",
                     "data": {
@@ -658,11 +665,10 @@ class ChatService:
                 }
 
         # ── 재라우팅 (single_agent + is_valid=False일 때 1회 시도) ──
-        # for 루프 종료 후 aggregator가 반영한 state 기준. should_continue_after_aggregator와 동일 의미론.
         if (
-            state.get("routing_mode") == "single_agent"
-            and not state.get("is_valid", False)
-            and state.get("rerouting_count", 0) == 0
+            state.get("routing_mode") == "single_agent" # 단일 에이전트 실행이었고
+            and not state.get("is_valid", False) # 결과가 실패였고
+            and state.get("rerouting_count", 0) == 0 # 아직 재시도 안 했으면
         ):
             yield {
                 "type": "status",
@@ -674,13 +680,17 @@ class ChatService:
                     "message": "다른 방식으로 다시 찾아보는 중...",
                 },
             }
+            # 프론트에 "다른 방식으로 다시 찾아보는 중..." 표시
 
+            # reroute_supervisor 실행 → 새 에이전트를 agent_plan에 추가
             reroute_result = reroute_supervisor_node(state)
             state.update(reroute_result)
 
+            # 재라우팅 후 새 agent_plan과 인덱스 읽기
             new_plan = state.get("agent_plan", []) or []
             new_idx = state.get("current_agent_index", 0)
 
+            # 실행할 새 에이전트가 있으면
             if new_idx < len(new_plan):
                 new_agent = new_plan[new_idx]
                 agent_fn = _AGENT_REGISTRY.get(new_agent)
@@ -693,13 +703,15 @@ class ChatService:
                             "message": ChatService._AGENT_STATUS_MESSAGES.get(
                                 new_agent, f"{new_agent} 실행 중..."
                             ),
-                            "rerouted": True,
+                            "rerouted": True, # 재라우팅된 에이전트임을 프론트에 표시
                         },
                     }
 
+                    # 새 에이전트 실행 → 결과 state에 저장
                     agent_result = await agent_fn(state)
                     state.update(agent_result)
 
+                    # aggregator 실행 → is_valid 판정
                     agg_result = aggregator_node(state)
                     state.update(agg_result)
 
@@ -713,7 +725,7 @@ class ChatService:
                                 .get(new_agent, {})
                                 .get("success")
                             ),
-                            "rerouted": True,
+                            "rerouted": True, # 재라우팅된 에이전트임을 프론트에 표시
                         },
                     }
 
@@ -721,25 +733,27 @@ class ChatService:
             "type": "status",
             "data": {"step": "response", "message": "답변 생성 중..."},
         }
+        # 프론트에 "답변 생성 중..." 표시
 
         response_tokens = 0
         full_response = ""
 
         async for chunk in response_node_stream(state):
             if chunk["type"] == "token":
-                full_response += chunk["content"]
-                yield {
+                full_response += chunk["content"] # GPT 토큰 조각을 전체 텍스트에 누적
+                yield { # 토큰 조각을 프론트로 바로 전송 (타이핑 효과)
                     "type": "token",
                     "data": {"content": chunk["content"]},
                 }
-            elif chunk["type"] == "usage":
+            elif chunk["type"] == "usage": # 스트림 마지막에 한 번 오는 토큰 사용량 기록
                 response_tokens = chunk.get("total_tokens", 0)
 
+        # 최종 응답과 누적 토큰 수 state에 저장
         state["response"] = full_response
         state["total_tokens"] = state.get("total_tokens", 0) + response_tokens
 
         if root_span is not None:
-            try:
+            try: # Langfuse 루트 span에 최종 응답 + 실행 메타데이터 기록
                 tools_used = state.get("tools_used", []) or []
                 root_span.update(
                     output={"response": full_response, "tools_used": tools_used},
@@ -756,9 +770,9 @@ class ChatService:
         yield {
             "type": "result",
             "data": {
-                "response": full_response,
-                "tools_used": state.get("tools_used", []),
-                "all_tool_results": state.get("all_tool_results", {}),
-                "total_tokens": state.get("total_tokens", 0),
+                "response": full_response, # 최종 자연어 응답
+                "tools_used": state.get("tools_used", []), # 사용한 에이전트 목록
+                "all_tool_results": state.get("all_tool_results", {}), # 모든 에이전트 결과
+                "total_tokens": state.get("total_tokens", 0), # 총 토큰 사용량
             },
         }
