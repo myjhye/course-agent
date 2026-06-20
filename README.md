@@ -15,7 +15,7 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 ### 핵심 특징
 
 - **LangGraph Supervisor 패턴 기반 멀티에이전트** — lesson / enrollment / faq / facility / calendar 5개 도메인 서브에이전트 분리, 복합 질문 multi-agent 순차 실행
-- **Self-Correction 재라우팅** — 에이전트 결과 부실 시 다른 도메인으로 자동 재분배 (예: lesson 검색 실패 ➡️ faq로 자동 폴백, calendar 실패 ➡️ lesson으로 폴백)
+- **Self-Correction 재라우팅** — 에이전트 결과 부실 시 다른 도메인으로 자동 재분배 (예: lesson 검색 실패 -> faq로 자동 폴백, calendar 실패 -> lesson으로 폴백)
 - **MCP 클라이언트/서버 양방향 구현** — 공공 체육시설 API(KSPO)와 Google Calendar API를 MCP 도구로 노출하는 독립 서버 구축 및 Course Agent의 MCP 클라이언트 연동
 - **SSE 토큰 스트리밍** — LangGraph 노드별 실시간 상태 + GPT 토큰 스트림
 - **RAG (pgvector)** — 125개 지식 청크 임베딩 + 코사인 유사도 검색, ILIKE 폴백 지원
@@ -26,15 +26,13 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 | 사용자 입력 | 동작 |
 |---|---|
-| `"수영 강습 알려줘"` | Supervisor ➡️ `lesson` 단일 호출 ➡️ DB 검색 결과 반환 |
-| `"강습 목록 보여주고 환불 규정도 알려줘"` | Supervisor ➡️ `multi_agent: [lesson, faq]` 순차 실행 ➡️ 통합 응답 |
-| `"서울에서 수영장 알려줘"` | Supervisor ➡️ `facility` ➡️ MCP 호출 ➡️ KSPO 공공 API 결과 |
-| `"내일 오전 10시에 테니스 강습 일정 구글 캘린더에 등록해줘"` | Supervisor ➡️ `calendar` ➡️ MCP 호출 ➡️ 구글 캘린더 이벤트 등록 성공 |
-| `"내일 스케줄 확인해줘"` | Supervisor ➡️ `calendar` ➡️ MCP 호출 ➡️ 구글 캘린더 일정 조회 |
-| `"파쿠르 강습 있어?"` | Supervisor ➡️ `lesson` 실패 ➡️ **재라우팅** ➡️ `faq` ➡️ 대안 안내 |
-| `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor ➡️ `multi_agent: [lesson, facility]` |
-
----
+| `"수영 강습 알려줘"` | Supervisor -> `lesson` 단일 호출 -> DB 검색 결과 반환 |
+| `"강습 목록 보여주고 환불 규정도 알려줘"` | Supervisor -> `multi_agent: [lesson, faq]` 순차 실행 -> 통합 응답 |
+| `"서울에서 수영장 알려줘"` | Supervisor -> `facility` -> MCP 호출 -> KSPO 공공 API 결과 |
+| `"내일 오전 10시에 테니스 강습 일정 구글 캘린더에 등록해줘"` | Supervisor -> `calendar` -> MCP 호출 -> 구글 캘린더 이벤트 등록 성공 |
+| `"내일 스케줄 확인해줘"` | Supervisor -> `calendar` -> MCP 호출 -> 구글 캘린더 일정 조회 |
+| `"파쿠르 강습 있어?"` | Supervisor -> `lesson` 실패 -> **재라우팅** -> `faq` -> 대안 안내 |
+| `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor -> `multi_agent: [lesson, facility]` |
 
 ## 아키텍처
 
@@ -44,8 +42,8 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 
 ```mermaid
 graph TD
-    Client[React Client (Vite) - Port 5173] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
-    Server <== SQLAlchemy ==> DB[(PostgreSQL + pgvector)]
+    Client["React Client (Vite) - Port 5173"] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
+    Server <== SQLAlchemy ==> DB[("PostgreSQL + pgvector")]
     Server <== FastMCP Client ==> FacilityMCP[Facility MCP Server - Port 8001]
     Server <== FastMCP Client ==> CalendarMCP[Calendar MCP Server - Port 8002]
     
@@ -120,8 +118,6 @@ sequenceDiagram
     service ->> Client: SSE token 스트리밍 & done 이벤트
 ```
 
----
-
 ## 기술 스택
 
 ### Backend (`server/`)
@@ -148,8 +144,6 @@ React 18, TypeScript, Vite, TailwindCSS, React Router v6, Axios
 ### 인프라
 
 PostgreSQL + pgvector(pg17), docker-compose, Railway, Vercel
-
----
 
 ## 디렉토리 구조
 
@@ -210,8 +204,6 @@ course-agent/
 └── docker-compose.yml                   # 복수 컨테이너 통합 기동
 ```
 
----
-
 ## AI 기능 상세
 
 ### 1. 멀티에이전트 채팅
@@ -222,10 +214,10 @@ course-agent/
 | lesson_agent | 강습 검색·상세 조회 (DB) |
 | enrollment_agent | 수강 현황·맞춤 추천 (DB) |
 | faq_agent | FAQ RAG 검색 (pgvector + ILIKE 폴백) |
-| facility_agent | 공공 체육시설 검색 (MCP ➡️ KSPO API) |
-| calendar_agent | 구글 캘린더 일정 추가/확인 (MCP ➡️ Google Calendar API) |
+| facility_agent | 공공 체육시설 검색 (MCP -> KSPO API) |
+| calendar_agent | 구글 캘린더 일정 추가/확인 (MCP -> Google Calendar API) |
 | Aggregator | 에이전트 결과 통합·검증 (`is_valid`) |
-| Reroute Supervisor | 휴리스틱 매핑(lesson➡️faq, facility➡️lesson, calendar➡️lesson 등)으로 재라우팅 |
+| Reroute Supervisor | 휴리스틱 매핑(lesson->faq, facility->lesson, calendar->lesson 등)으로 재라우팅 |
 | Response (stream) | OpenAI `stream=True`로 토큰 단위 SSE 출력 |
 
 ### 2. AI 콘텐츠 자동 생성
@@ -235,8 +227,6 @@ course-agent/
 ### 3. 맞춤 추천
 
 추천 이유는 GPT-4o-mini가 개인화하여 생성.
-
----
 
 ## 데이터 모델
 
@@ -307,8 +297,6 @@ erDiagram
 ```
 
 체육시설 및 구글 캘린더 데이터는 외부 API 호출 방식이라 로컬 DB에 테이블 없음.
-
----
 
 ## 배포
 

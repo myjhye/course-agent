@@ -4,8 +4,8 @@
 
 ```mermaid
 graph TD
-    Client[React Client (Vite) - Port 5173] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
-    Server <== SQLAlchemy ==> DB[(PostgreSQL + pgvector)]
+    Client["React Client (Vite) - Port 5173"] <== SSE / HTTP ==> Server[FastAPI Server - Port 8000]
+    Server <== SQLAlchemy ==> DB[("PostgreSQL + pgvector")]
     Server <== FastMCP Client ==> FacilityMCP[Facility MCP Server - Port 8001]
     Server <== FastMCP Client ==> CalendarMCP[Calendar MCP Server - Port 8002]
     
@@ -89,10 +89,10 @@ tool_used: "lesson,faq"
 
 1. **Facility MCP Server (`mcp_servers/facility_server/`)**
    - FastMCP로 `search_facilities` 도구 노출.
-   - 내부 흐름: KSPO API 호출 ➡️ 응답 정규화 ➡️ (사용자 위경도 제공 시) haversine 거리 기반 정렬 ➡️ TTL 캐시 적용.
+   - 내부 흐름: KSPO API 호출 -> 응답 정규화 -> (사용자 위경도 제공 시) haversine 거리 기반 정렬 -> TTL 캐시 적용.
 2. **Calendar MCP Server (`mcp_servers/calendar_server/`)**
    - FastMCP로 `quick_add_event`, `list_events` 도구 노출.
-   - 내부 흐름: Google Calendar API 호출 ➡️ 사용자 캘린더 연동 ➡️ 이벤트 생성 및 조회.
+   - 내부 흐름: Google Calendar API 호출 -> 사용자 캘린더 연동 -> 이벤트 생성 및 조회.
 
 ### 클라이언트 (`server/app/services/ai/mcp_client.py`)
 
