@@ -16,7 +16,9 @@ from app.services.ai.mcp_client import calendar_mcp_client
 async def _extract_calendar_args(client, state: AgentState) -> Dict[str, Any]:
     """사용자 메시지에서 구글 캘린더 관리 인자를 LLM으로 추출합니다."""
     # LLM이 상대 일자(내일, 이번주 등)를 올바르게 판정하도록 현재 기준 시각을 제공합니다.
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 서버 컨테이너의 타임존에 영향받지 않도록 KST(+09:00)로 보정하여 현재 시각을 구합니다.
+    tz_kst = datetime.timezone(datetime.timedelta(hours=9))
+    now = datetime.datetime.now(tz_kst).strftime("%Y-%m-%d %H:%M:%S")
     prompt = f"""사용자 메시지에서 구글 캘린더 일정 관리 조건을 추출하세요.
 현재 시스템 시간은 {now} 입니다. 이 기준을 참고해 상대적인 날짜/시간(예: '내일 10시', '이번주 수요일')을 절대적인 시간으로 변환해야 합니다.
 
