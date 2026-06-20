@@ -35,7 +35,7 @@ sequenceDiagram
         Server->>Cache: asyncio.Lock 획득 (key 기준 동시 요청 방지)
         Server->>API: HTTP GET (KSPO API)
         API-->>Server: 체육시설 원본 XML/JSON 데이터
-        Server->>Server: 26개 필드 ➡️ 12개 필드로 정규화 & 폐업 필터링
+        Server->>Server: 26개 필드 -> 12개 필드로 정규화 & 폐업 필터링
         opt user_lat & user_lng 제공 시
             Server->>Server: Haversine 거리 계산 및 정렬
         end
