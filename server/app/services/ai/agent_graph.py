@@ -103,7 +103,7 @@ def build_multi_agent_graph():
     )
 
     # supervisor, aggregator, reroute 함수 임포트
-    from app.services.ai.supervisor_node import (
+    from app.services.ai.orchestration_node import (
         aggregator_node,
         reroute_supervisor_node,
         supervisor_node,

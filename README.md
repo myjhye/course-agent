@@ -87,7 +87,7 @@ sequenceDiagram
     participant router as app/routers/chat.py
     participant service as app/services/chat_service.py
     participant graph as app/services/ai/agent_graph.py
-    participant supervisor as app/services/ai/supervisor_node.py
+    participant supervisor as app/services/ai/orchestration_node.py
     participant agents as app/services/ai/agents/ (lesson/enroll/faq/facility/calendar)
     participant mcp as app/services/ai/mcp_client.py
     participant db as DB (Postgres/pgvector/RAG)
@@ -162,7 +162,7 @@ course-agent/
 │   │   │       ├── agent_state.py       # AgentState (TypedDict)
 │   │   │       ├── agent_graph.py       # build_multi_agent_graph + 조건부 분기
 │   │   │       ├── agent_nodes.py       # response_node + 공용 헬퍼
-│   │   │       ├── supervisor_node.py   # Supervisor + Aggregator + reroute_supervisor
+│   │   │       ├── orchestration_node.py   # Supervisor + Aggregator + reroute_supervisor
 │   │   │       ├── mcp_client.py        # facility / calendar MCP 호출 클라이언트
 │   │   │       ├── tool_executor.py     # lesson/enrollment/faq 도구 실행
 │   │   │       ├── embedding_service.py # RAG 임베딩 생성 + pgvector 검색

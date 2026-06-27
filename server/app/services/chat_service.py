@@ -19,9 +19,9 @@ AI 로직 실행 방식:
 - _run_agent_graph_stream()       → Langfuse span 열고 inner에 실행 위임
 - _run_agent_graph_stream_inner() → state에 DB 주입하고 _run_multi_agent_stream 호출
 - _run_multi_agent_stream()       → 수동 오케스트레이션 (내부 함수)
-  - supervisor_node()                      → supervisor_node.py    (질문 분석, 에이전트 계획 수립)
+  - supervisor_node()                      → orchestration_node.py (질문 분석, 에이전트 계획 수립)
   - lesson/enrollment/faq/facility_agent() → agents/               (각 도메인 실제 검색 실행)
-  - aggregator_node()                      → supervisor_node.py    (에이전트 결과 수집, 성공/실패 판정)
+  - aggregator_node()                      → orchestration_node.py (에이전트 결과 수집, 성공/실패 판정)
   - response_node_stream()                 → agent_nodes.py        (GPT 최종 자연어 응답 생성)
 
 두 경로 모두 내부적으로 이 순서로 동작한다:
@@ -581,7 +581,7 @@ class ChatService:
             lesson_agent,
             calendar_agent,
         )
-        from app.services.ai.supervisor_node import (
+        from app.services.ai.orchestration_node import (
             aggregator_node,
             reroute_supervisor_node,
             supervisor_node,
