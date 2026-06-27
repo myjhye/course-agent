@@ -14,16 +14,16 @@ sequenceDiagram
     actor User as 사용자 (React Client)
     participant main as app/main.py
     participant router as routers/chat.py
-    participant service as services/chat_service.py
+    participant service as services/chat_orchestrator.py
     participant graph as services/ai/agent_graph.py
-    participant supervisor as services/ai/orchestration_node.py
+    participant supervisor as services/ai/routing_nodes.py
     participant executor as services/ai/tool_executor.py
     participant mcp as services/ai/mcp_client.py
     participant db as Database / FAQ RAG
 
     User ->> main: 1. HTTP POST /api/chat/stream 요청
     main ->> router: 라우팅 전송
-    router ->> service: 2. chat_service.py (_run_multi_agent_stream 호출)
+    router ->> service: 2. chat_orchestrator.py (_run_multi_agent_stream 호출)
     service ->> graph: 3. LangGraph 빌드 및 실행요청 (agent_graph.py)
     
     rect rgb(230, 240, 255)
@@ -72,7 +72,7 @@ sequenceDiagram
   * **연결 관계**: API 핸들러에서 DB에 액세스하기 위해 사용하는 세션 주입용 의존성 함수(`get_db`)를 제공합니다.
 
 ### 2.2 비즈니스 로직 계층 (Services)
-* **`chat_service.py`**
+* **`chat_orchestrator.py`**
   * **역할**: 프론트엔드와 주고받는 채팅 내역을 영속성 데이터베이스에 저장하고, 실시간 LangGraph 호출을 통해 **멀티에이전트 실행 상태 분석 및 SSE 전송 규격 포맷팅**을 총괄 조율합니다.
   * **연결 관계**: `agent_graph.py`를 기동하고 이벤트를 비동기적으로 클라이언트에 전송합니다.
 * **`lesson_service.py`**
@@ -88,8 +88,8 @@ sequenceDiagram
   * **연결 관계**: LangGraph 상의 모든 실행 노드와 제어 스크립트가 해당 상태 사전을 입력받고 수정합니다.
 * **`agent_graph.py`**
   * **역할**: 에이전트들과 총괄 관리자(Supervisor)를 노드로 구성하고, 각 노드가 실행을 마친 뒤 어느 노드로 흘러갈지 제어 조건(Edge)을 설정하여 LangGraph 인스턴스를 빌드합니다.
-  * **연결 관계**: `chat_service.py`가 인스턴스를 받아서 연산을 구동합니다.
-* **`orchestration_node.py`**
+  * **연결 관계**: `chat_orchestrator.py`가 인스턴스를 받아서 연산을 구동합니다.
+* **`routing_nodes.py`**
   * **역할**: 
     1. **Supervisor**: 질문의 유형을 분별하여 수강/강습/체육시설/FAQ 중 필요한 곳에 임무를 라우팅합니다.
     2. **Aggregator**: 수집 결과를 검증하고, 실패한 경우 자가 수정 우회 라우팅(Heuristic Rerouting)을 지정합니다.

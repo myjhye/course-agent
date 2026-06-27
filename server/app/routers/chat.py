@@ -1,6 +1,6 @@
 """
-HTTP 진입점. 사용자 요청을 받아 ChatService에 위임한다.
-실제 LLM/그래프 실행은 ChatService에 위임하고, 여기서는 HTTP/SSE 계층만 담당한다.
+HTTP 진입점. 사용자 요청을 받아 ChatOrchestrator에 위임한다.
+실제 LLM/그래프 실행은 ChatOrchestrator에 위임하고, 여기서는 HTTP/SSE 계층만 담당한다.
 
 제공 엔드포인트:
 - POST /         : 비스트리밍 채팅. AI 응답이 다 만들어지면 한 번에 반환.
@@ -25,7 +25,7 @@ from app.schemas.chat import (
     ChatSessionDetailResponse,
     ChatMessageResponse,
 )
-from app.services.chat_service import ChatService
+from app.services.chat_orchestrator import ChatOrchestrator
 from app.models.chat import ChatSession, ChatMessage
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -39,7 +39,7 @@ async def send_message(request: ChatRequest, db: AsyncSession = Depends(get_db))
     응답이 완료될 때까지 기다린 뒤 한 번에 반환한다.
     스트리밍이 필요하면 POST /stream 을 사용한다.
     """
-    user_msg, assistant_msg = await ChatService.chat(
+    user_msg, assistant_msg = await ChatOrchestrator.chat(
         db=db,
         session_id=request.session_id,
         user_message=request.message,
@@ -61,12 +61,12 @@ async def send_message_stream(
     """
     SSE 스트리밍 채팅.
 
-    ChatService.chat_stream이 status/token/usage/result 이벤트를 yield하고,
+    ChatOrchestrator.chat_stream이 status/token/usage/result 이벤트를 yield하고,
     EventSourceResponse가 이를 Server-Sent Events 프로토콜로 클라이언트에 전달한다.
     """
 
     async def event_generator():
-        async for event in ChatService.chat_stream(
+        async for event in ChatOrchestrator.chat_stream(
             db=db,
             session_id=request.session_id,
             user_message=request.message,
@@ -84,7 +84,7 @@ async def send_message_stream(
 @router.get("/sessions", response_model=List[ChatSessionResponse])
 async def get_sessions(db: AsyncSession = Depends(get_db)):
     """채팅 세션 목록. 프론트에서 사이드바/목록에 표시할 세션 리스트를 반환한다."""
-    sessions = await ChatService.get_sessions(db)
+    sessions = await ChatOrchestrator.get_sessions(db)
     return sessions
 
 
@@ -104,7 +104,7 @@ async def get_session_detail(session_id: str, db: AsyncSession = Depends(get_db)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    messages = await ChatService.get_session_messages(db, session_id)
+    messages = await ChatOrchestrator.get_session_messages(db, session_id)
 
     return ChatSessionDetailResponse(
         session=ChatSessionResponse.model_validate(session),
@@ -125,4 +125,5 @@ async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
     return {"message": "Session deleted"}
+
 

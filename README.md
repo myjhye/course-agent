@@ -85,9 +85,9 @@ sequenceDiagram
     actor Client as Client (React)
     participant main as server/app/main.py
     participant router as app/routers/chat.py
-    participant service as app/services/chat_service.py
+    participant service as app/services/chat_orchestrator.py
     participant graph as app/services/ai/agent_graph.py
-    participant supervisor as app/services/ai/orchestration_node.py
+    participant supervisor as app/services/ai/routing_nodes.py
     participant agents as app/services/ai/agents/ (lesson/enroll/faq/facility/calendar)
     participant mcp as app/services/ai/mcp_client.py
     participant db as DB (Postgres/pgvector/RAG)
@@ -154,7 +154,7 @@ course-agent/
 │   │   ├── models/                      # SQLAlchemy 모델 (lesson, enrollment, chat, knowledge ...)
 │   │   ├── routers/                     # API 라우터 (admin/, my/, lessons, chat)
 │   │   ├── services/
-│   │   │   ├── chat_service.py          # 비스트리밍/스트리밍 채팅 오케스트레이션
+│   │   │   ├── chat_orchestrator.py     # 비스트리밍/스트리밍 채팅 오케스트레이션
 │   │   │   ├── recommendation_service.py
 │   │   │   ├── feedback_service.py
 │   │   │   ├── dashboard_service.py
@@ -162,7 +162,7 @@ course-agent/
 │   │   │       ├── agent_state.py       # AgentState (TypedDict)
 │   │   │       ├── agent_graph.py       # build_multi_agent_graph + 조건부 분기
 │   │   │       ├── agent_nodes.py       # response_node + 공용 헬퍼
-│   │   │       ├── orchestration_node.py   # Supervisor + Aggregator + reroute_supervisor
+│   │   │       ├── routing_nodes.py        # Supervisor + Aggregator + reroute_supervisor
 │   │   │       ├── mcp_client.py        # facility / calendar MCP 호출 클라이언트
 │   │   │       ├── tool_executor.py     # lesson/enrollment/faq 도구 실행
 │   │   │       ├── embedding_service.py # RAG 임베딩 생성 + pgvector 검색
