@@ -1,27 +1,23 @@
 """
-서브에이전트 공통 팩토리.
-
-모든 서브에이전트(lesson / enrollment / faq / facility)는 동일한 패턴으로 동작한다:
-  1. extract_args: 사용자 메시지에서 도구 인자를 추출 (LLM 호출)
-  2. execute_tool: 추출된 인자로 실제 도구 실행 (DB/RAG/외부 API)
-  3. validate: 결과가 충분한지 판단
-  4. (부실한 경우) 인자를 완화해 재시도 (max_retries까지)
-
-이 공통 로직을 make_subagent 팩토리가 제공하고,
-각 에이전트는 3개의 콜백 함수만 넘기면 된다.
+서브에이전트 공통 팩토리 (make_subagent).
+인자 추출 -> 도구 실행 -> 결과 검증 -> (실패 시) 인자 완화 및 재시도 순서의 공통 파이프라인을 제공한다.
 """
 
 from typing import Callable, Awaitable, Any, Dict
 
 from app.services.ai.agent_state import AgentState
 
-
+# ExtractFn: 사용자 입력(AgentState)에서 도구 실행에 필요한 파라미터를 LLM 등을 통해 추출하는 비동기 함수
 ExtractFn = Callable[[AgentState], Awaitable[Dict[str, Any]]]
+
+# ExecuteFn: 추출된 파라미터와 상태를 바탕으로 로컬 DB 쿼리, RAG 검색, 외부 MCP 등의 실제 도구를 실행하는 비동기 함수
 ExecuteFn = Callable[[Dict[str, Any], AgentState], Awaitable[Dict[str, Any]]]
+
+# ValidateFn: 도구 실행 결과 데이터가 유효한지(예: 검색 결과 0건 여부, 신뢰성 검증 등) 판단하는 함수
 ValidateFn = Callable[[Dict[str, Any]], bool]
+
+# RelaxFn: 검증 실패 시, 재시도 회차에 맞게 입력 파라미터를 완화(필터 조건 해제 등)해 주는 완화 함수
 RelaxFn = Callable[[Dict[str, Any], int], Dict[str, Any]]
-# RelaxFn: (기존 args, 재시도 회차) -> 완화된 args
-# 재시도 회차에 따라 다르게 완화할 수 있도록 회차를 함께 받는다.
 
 
 def make_subagent(
@@ -33,33 +29,19 @@ def make_subagent(
     max_retries: int = 2,
 ):
     """
-    서브에이전트 노드 함수를 생성한다.
-
-    반환된 함수는 LangGraph 노드로 바로 등록 가능하며,
-    실행 결과를 state.agent_outputs[name]에 누적한다.
-
-    Args:
-        name: 에이전트 이름 ("lesson" | "enrollment" | "faq" | "facility")
-        extract_args: 사용자 메시지 → 도구 인자 추출 비동기 함수
-        execute_tool: 인자 + state → 도구 실행 결과 비동기 함수
-                      반환 형식: {"success": bool, "data": Any, "error"?: str, ...}
-        validate: 도구 결과 → 유효성 판단 함수
-        relax_args: 재시도 시 인자 완화 함수 (args, retry_idx) -> args
-        max_retries: 최대 재시도 횟수 (기본 2)
-
-    Returns:
-        async (state: AgentState) -> dict: LangGraph 노드 함수
+    개별 도메인 에이전트(lesson, enrollment, faq, facility, calendar)의 공통 노드 함수를 생성한다.
+    생성된 함수는 LangGraph 노드로 등록 가능하며, 최종 결과는 state.agent_outputs[name]에 저장된다.
     """
 
     async def agent_node(state: AgentState) -> Dict[str, Any]:
-        # 1) 인자 추출
+        # 1. 사용자 메시지로부터 도구 실행을 위한 인자 추출 (LLM 호출)
         try:
             args = await extract_args(state)
         except Exception as e:
             print(f"[{name}] extract_args 에러: {e}")
             args = {}
 
-        # 2) 실행 + 재시도 루프
+        # 2. 실행 및 검증 재시도 루프 (최대 max_retries회 수행)
         result: Dict[str, Any] = {"success": False, "data": None, "error": "not_executed"}
         attempts = 0
         last_args = args
@@ -70,7 +52,7 @@ def make_subagent(
                 result = await execute_tool(last_args, state)
                 execution_count += 1
             except ValueError as e:
-                # _db 미주입 등 프로그래밍 계약 위반은 재시도해도 의미 없음 → 그대로 전파
+                # DB 세션 누락 등 코드 레벨의 치명적인 계약 위반은 재시도하지 않고 그대로 상위 에러 전파
                 if "requires state['_db']" in str(e):
                     raise
                 print(f"[{name}] execute_tool 에러 (attempt {attempts}): {e}")
@@ -81,6 +63,7 @@ def make_subagent(
                 result = {"success": False, "data": None, "error": str(e)}
                 execution_count += 1
 
+            # 검증을 만족하면(is_valid=True) 재시도 루프 즉시 종료
             if validate(result):
                 break
 
@@ -88,16 +71,17 @@ def make_subagent(
             if attempts > max_retries:
                 break
 
-            # 재시도 전 인자 완화
+            # 다음 루프 돌기 전 완화 함수(relax_args)를 타서 검색 조건을 단순화
             try:
                 last_args = relax_args(last_args, attempts)
             except Exception as e:
                 print(f"[{name}] relax_args 에러: {e}")
                 break
 
-        # 3) state에 병합할 출력 구성
+        # 3. LangGraph 전역 상태 업데이트를 위한 출력 데이터 구성
         is_ok = validate(result)
 
+        # 개별 에이전트들의 실행 이력을 관리하기 위해 agent_outputs 딕셔너리에 추가
         outputs = dict(state.get("agent_outputs", {}))
         outputs[name] = {
             **result,
@@ -105,14 +89,11 @@ def make_subagent(
             "attempts": execution_count,
         }
 
+        # 실행된 에이전트 목록 히스토리 기록
         tools_used = list(state.get("tools_used", []))
         tools_used.append(name)
 
-        # 기존 코드와의 하위 호환:
-        # response_node/response_node_stream이 state["tool_name"], state["tool_result"]를 참조하므로
-        # 현재 에이전트 결과를 이 필드에도 함께 실어준다.
-        # (멀티에이전트 모드에서 여러 에이전트가 실행되면 마지막 에이전트 결과가 들어가지만,
-        #  Step 4에서 aggregator가 재정리한다. 이번 스텝에서는 단순 채움만 한다.)
+        # response_node 및 response_node_stream 등 기존 비-멀티에이전트 호환성을 위한 반환 처리
         return {
             "agent_outputs": outputs,
             "tools_used": tools_used,
@@ -123,3 +104,4 @@ def make_subagent(
 
     agent_node.__name__ = f"{name}_agent"
     return agent_node
+

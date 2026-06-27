@@ -1,13 +1,7 @@
 """
 Facility 서브에이전트.
-
-사용자 메시지에서 지역(sido/sigungu)·시설유형을 추출해 facility MCP 서버의
-search_facilities 도구를 호출한다. MCP 호출 실패 시 예외를 raise해서
-make_subagent의 표준 실패 경로로 빠지게 한다 (is_valid=False → 재라우팅).
-
-MVP 범위:
-- 좌표(user_lat/user_lng)는 넘기지 않음 — 거리 정렬 생략
-- 시도명만 추출 가능하면 시군구 없이도 호출
+사용자 입력에서 지역(시도/시군구) 및 체육시설 유형을 LLM으로 추출하여,
+전국 체육시설 API를 중개하는 facility MCP 서버의 search_facilities 도구를 호출한다.
 """
 
 import json
@@ -21,13 +15,10 @@ from app.services.ai.mcp_client import facility_mcp_client
 
 async def _extract_facility_args(client, state: AgentState) -> Dict[str, Any]:
     """
-    사용자 메시지에서 facility 검색 인자를 LLM으로 추출한다.
-
-    규칙:
-    - sido는 한국 표준 시도명 ("서울특별시", "경기도" 등 풀네임)
-    - sigungu는 "강남구", "고양시 덕양구"처럼 KSPO 원본 포맷
-    - facility_type은 자주 나오는 KSPO 유형명 ("수영장", "체력단련장", ...)
-    - 추출 불가능한 필드는 null
+    사용자 대화 내용에서 체육시설 API 쿼리에 사용할 필터링 값들을 추출한다.
+    - sido: 공공데이터 검색용 정규 시도명 풀네임 (예: 서울 -> 서울특별시)
+    - sigungu: 구/군명
+    - facility_type: 체육시설 업종 유형
     """
     prompt = f"""사용자 메시지에서 체육시설 검색 조건을 추출하세요.
 
@@ -54,29 +45,35 @@ JSON으로 응답 (해당 없는 필드는 null):
             response_format={"type": "json_object"},
         )
         args = json.loads(response.choices[0].message.content)
+        # null이거나 빈 문자열인 필드는 딕셔너리에서 제외 처리
         return {k: v for k, v in args.items() if v not in (None, "", "null")}
     except Exception:
         return {}
 
 
 async def _extract(state: AgentState) -> Dict[str, Any]:
+    # OpenAI 클라이언트를 사용하여 체육시설 필터 인자 추출 진행
     client = get_openai_client()
     return await _extract_facility_args(client, state)
 
 
 async def _call_facility_tool(args: Dict[str, Any]) -> Dict[str, Any]:
     """
-    MCP 서버의 search_facilities 도구를 호출한다.
-    fastmcp.Client 응답 구조 차이를 고려해 방어적으로 언팩한다.
+    FastMCP 클라이언트를 통해 외부 시설 검색 API를 직접 호출한다.
+    FastMCP 라이브러리의 버전 및 응답 형식(dict, text 필드, structured_content 등)에 구애받지 않도록
+    다양한 객체 구조를 시도하여 방어적으로 JSON 데이터를 언팩한다.
     """
     result = await facility_mcp_client.call_tool("search_facilities", args)
 
+    # 1) 응답이 이미 dict 형식인 경우 바로 반환
     if isinstance(result, dict):
         data: Any = result
     else:
+        # 2) 객체 속성에 'data' 또는 'structured_content'가 포함된 경우
         data = getattr(result, "data", None)
         if data is None:
             data = getattr(result, "structured_content", None)
+        # 3) fastmcp의 TextContent 리스트 구조를 띠고 있는 경우 텍스트를 파싱
         if data is None:
             content = getattr(result, "content", None) or []
             if content and hasattr(content[0], "text"):
@@ -89,6 +86,7 @@ async def _call_facility_tool(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _execute(args: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
+    # 추출한 검색 조건을 통해 MCP 도구를 실행하고 결과를 래핑하여 반환
     _ = state
     data = await _call_facility_tool(args)
     return {"success": True, "data": data}
@@ -96,8 +94,9 @@ async def _execute(args: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
 
 def _validate(result: Dict[str, Any]) -> bool:
     """
-    facility 결과 유효성 판정.
-    - result.success=True 이고 data.items가 비어 있지 않으면 유효
+    체육시설 검색 결과에 대한 최종 검증을 수행한다.
+    조회는 성공했으나 반환된 시설 목록(items)이 비어있다면, 사용자에게 보여줄 데이터가
+    실질적으로 없으므로 실패(False)로 판단하여 1차 에이전트 실패 -> lesson 폴백을 작동시킨다.
     """
     if not bool(result.get("success")):
         return False
@@ -109,10 +108,13 @@ def _validate(result: Dict[str, Any]) -> bool:
 
 
 def _relax(args: Dict[str, Any], retry_idx: int) -> Dict[str, Any]:
+    # max_retries=0 으로 재시도를 타지 않으므로 기본 인자를 그대로 바이패스함
     _ = retry_idx
     return args
 
 
+# Facility 서브에이전트 노드 정의
+# 공공데이터 API 검색 특성상 인자 완화 재시도보다는 빠른 실패 후 lesson 폴백이 유연하므로 max_retries=0으로 고정한다.
 facility_agent = make_subagent(
     name="facility",
     extract_args=_extract,
@@ -121,3 +123,5 @@ facility_agent = make_subagent(
     relax_args=_relax,
     max_retries=0,
 )
+
+

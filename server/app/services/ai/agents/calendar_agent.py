@@ -1,6 +1,6 @@
 """
 Calendar 서브에이전트.
-구글 캘린더 MCP 서버의 create_calendar_event 및 list_calendar_events 도구를 호출합니다.
+사용자 대화에서 일정(제목, 일시 등)을 추출하여 google-calendar MCP 서버의 일정 생성 및 조회 도구를 호출한다.
 """
 
 import json
@@ -14,9 +14,10 @@ from app.services.ai.mcp_client import calendar_mcp_client
 
 
 async def _extract_calendar_args(client, state: AgentState) -> Dict[str, Any]:
-    """사용자 메시지에서 구글 캘린더 관리 인자를 LLM으로 추출합니다."""
-    # LLM이 상대 일자(내일, 이번주 등)를 올바르게 판정하도록 현재 기준 시각을 제공합니다.
-    # 서버 컨테이너의 타임존에 영향받지 않도록 KST(+09:00)로 보정하여 현재 시각을 구합니다.
+    """
+    사용자 메시지에서 구글 캘린더 연동 파라미터를 LLM으로 추출한다.
+    - 서버가 작동하는 컨테이너 환경의 타임존(UTC)에 구애받지 않도록 KST(+09:00)로 보정하여 현재 시각을 구한 뒤 프롬프트에 주입한다.
+    """
     tz_kst = datetime.timezone(datetime.timedelta(hours=9))
     now = datetime.datetime.now(tz_kst).strftime("%Y-%m-%d %H:%M:%S")
     prompt = f"""사용자 메시지에서 구글 캘린더 일정 관리 조건을 추출하세요.
@@ -58,12 +59,17 @@ JSON으로 응답 (해당 없는 필드는 null):
 
 
 async def _extract(state: AgentState) -> Dict[str, Any]:
+    # OpenAI 클라이언트를 사용하여 구글 캘린더 필터 인자 추출 진행
     client = get_openai_client()
     return await _extract_calendar_args(client, state)
 
 
 async def _call_calendar_tool(args: Dict[str, Any]) -> str:
-    """MCP 서버의 구글 캘린더 도구를 호출하고 결과를 텍스트로 파싱합니다."""
+    """
+    MCP 서버의 구글 캘린더 도구를 호출하고, 수신된 응답(fastmcp Client 객체)을 문자열 결과로 파싱하여 반환한다.
+    - 생성(create): 제목, 시작/종료 일시 필수 검증 후 create_calendar_event 도구 실행
+    - 조회(list): time_min/time_max 범위 필터를 지정하여 list_calendar_events 도구 실행
+    """
     action = args.get("action", "create")
 
     if action == "create":
@@ -86,7 +92,7 @@ async def _call_calendar_tool(args: Dict[str, Any]) -> str:
             tool_args["time_max"] = args["end_time"]
         result = await calendar_mcp_client.call_tool("list_calendar_events", tool_args)
 
-    # 응답 텍스트 추출 (fastmcp.Client 결과 객체 가공)
+    # fastmcp Client가 반환하는 응답 구조체에서 순수 텍스트 결과값만 조립 및 파싱
     if hasattr(result, "content") and result.content:
         text_val = ""
         for item in result.content:
@@ -99,6 +105,7 @@ async def _call_calendar_tool(args: Dict[str, Any]) -> str:
 
 
 async def _execute(args: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
+    # 구글 캘린더 도구 실행 및 결과를 success 래퍼에 담아 반환
     _ = state
     try:
         data = await _call_calendar_tool(args)
@@ -108,15 +115,18 @@ async def _execute(args: Dict[str, Any], state: AgentState) -> Dict[str, Any]:
 
 
 def _validate(result: Dict[str, Any]) -> bool:
-    """캘린더 작업 결과 유효성 판정."""
+    # 작업 실행 성공 여부(success=True) 검증
     return bool(result.get("success"))
 
 
 def _relax(args: Dict[str, Any], retry_idx: int) -> Dict[str, Any]:
+    # max_retries=0으로 재시도를 거치지 않으므로 기존 인자 그대로 바이패스
     _ = retry_idx
     return args
 
 
+# 캘린더 서브에이전트 노드 정의
+# 네트워크 상태 및 자격증명 이슈 발생 시 빠른 에러 인지 및 lesson 폴백 유도를 위해 max_retries=0으로 설정
 calendar_agent = make_subagent(
     name="calendar",
     extract_args=_extract,
@@ -125,3 +135,4 @@ calendar_agent = make_subagent(
     relax_args=_relax,
     max_retries=0,
 )
+
