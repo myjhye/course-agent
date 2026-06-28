@@ -1,9 +1,7 @@
 import json
-import uuid
 import time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from app.models.lesson import Lesson
 from app.models.lesson_content import LessonContent
 from app.models.ai_log import AILog
@@ -11,29 +9,28 @@ from app.services.ai.llm_client import get_openai_client
 from app.constants.thumbnails import get_default_thumbnail
 
 
+
 class ContentGenerator:
     
     @staticmethod
     async def generate_full_content(db: AsyncSession, lesson: Lesson) -> LessonContent:
         """
-        전체 콘텐츠 생성 (소개 + 커리큘럼 + 썸네일).
-
-        강습 등록 시 사람이 일일이 작성하지 않고도, LLM을 통해 기본 소개/커리큘럼과
-        종목별 기본 썸네일을 한 번에 생성해 준다.
+        강습 등록 시 소개 문구, 커리큘럼, 썸네일을 한 번에 생성한다.
+        관리자가 직접 작성하지 않아도 기본 콘텐츠가 자동으로 만들어진다.
         """
         
         start_time = time.time()
         
-        # 1. 소개 문구 생성
+        # 소개 문구 생성
         introduction = await ContentGenerator._generate_introduction(lesson)
         
-        # 2. 커리큘럼 생성
+        # 커리큘럼 생성
         curriculum = await ContentGenerator._generate_curriculum(lesson)
         
-        # 3. 종목별 기본 썸네일 적용 (이미지 생성 대신 안전한 정적 썸네일 사용)
+        # 이미지 생성 대신 종목별 정적 썸네일 사용
         thumbnail_url = get_default_thumbnail(lesson.sport_type.value)
         
-        # 4. 버전 계산: 이미 존재하는 콘텐츠가 있으면 가장 높은 버전 + 1
+        # 이미 콘텐츠가 있으면 버전 +1, 없으면 1부터 시작
         result = await db.execute(
             select(LessonContent)
             .where(LessonContent.lesson_id == lesson.id)
@@ -42,7 +39,7 @@ class ContentGenerator:
         existing = result.scalars().first()
         new_version = (existing.version + 1) if existing else 1
         
-        # 5. 기존 콘텐츠 비활성화: 항상 하나의 활성 버전만 유지한다.
+        # 기존 콘텐츠 전부 비활성화. 활성 버전은 항상 하나만 유지
         if existing:
             all_contents = await db.execute(
                 select(LessonContent).where(LessonContent.lesson_id == lesson.id)
@@ -50,7 +47,7 @@ class ContentGenerator:
             for content in all_contents.scalars().all():
                 content.is_active = False
         
-        # 6. 새 콘텐츠 저장
+        # 새 콘텐츠 저장
         content = LessonContent(
             lesson_id=lesson.id,
             introduction=introduction,
@@ -61,7 +58,7 @@ class ContentGenerator:
         )
         db.add(content)
         
-        # 7. AI 로그: 콘텐츠 버전 생성에 얼마나 걸렸는지 기록한다.
+        # AI 로그 저장. 관리자 대시보드에서 콘텐츠 생성 이력 확인용
         latency_ms = (time.time() - start_time) * 1000
         ai_log = AILog(
             feature_type="content",
@@ -80,9 +77,8 @@ class ContentGenerator:
     @staticmethod
     async def regenerate_introduction(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
         """
-        소개 문구만 재생성.
-
-        커리큘럼/썸네일은 유지하고 카피만 손보고 싶을 때 사용한다.
+        소개 문구만 재생성한다. 커리큘럼과 썸네일은 그대로 유지된다.
+        관리자가 소개 문구만 다시 뽑고 싶을 때 사용한다.
         """
         
         result = await db.execute(
@@ -91,13 +87,11 @@ class ContentGenerator:
         content = result.scalar_one_or_none()
         
         if not content:
-            # 이미 삭제됐거나 존재하지 않는 콘텐츠 ID가 들어온 경우 즉시 오류를 던진다.
             raise ValueError("Content not found")
         
         introduction = await ContentGenerator._generate_introduction(lesson)
         content.introduction = introduction
         
-        # AI 로그: 어떤 액션으로 어떤 길이의 소개가 생성됐는지 남겨둔다.
         ai_log = AILog(
             feature_type="content",
             lesson_id=lesson.id,
@@ -114,9 +108,8 @@ class ContentGenerator:
     @staticmethod
     async def regenerate_curriculum(db: AsyncSession, lesson: Lesson, content_id: int) -> LessonContent:
         """
-        커리큘럼만 재생성.
-
-        소개/썸네일은 그대로 두고, 주차별 학습 계획만 다시 뽑고 싶을 때 사용한다.
+        커리큘럼만 재생성한다. 소개 문구와 썸네일은 그대로 유지된다.
+        관리자가 주차별 학습 계획만 다시 뽑고 싶을 때 사용한다.
         """
         
         result = await db.execute(
@@ -130,7 +123,6 @@ class ContentGenerator:
         curriculum = await ContentGenerator._generate_curriculum(lesson)
         content.curriculum = curriculum
         
-        # AI 로그: 생성된 weeks 개수를 남겨 난이도/주차 수 분포를 추후 분석할 수 있게 한다.
         ai_log = AILog(
             feature_type="content",
             lesson_id=lesson.id,
@@ -147,10 +139,10 @@ class ContentGenerator:
     @staticmethod
     async def _generate_introduction(lesson: Lesson) -> str:
         """
-        소개 문구 생성.
-
-        강습 메타데이터(종목/대상/난이도/강사)를 한국어 라벨로 바꿔 LLM에 전달하고,
-        길이/톤/포맷을 프롬프트에서 명시해 일관된 카피를 만든다.
+        강습 소개 문구를 생성한다.
+        종목/대상/난이도/강사를 한국어로 변환해서 LLM에 넘기고,
+        3~4문장의 친근한 톤으로 소개 문구를 만든다.
+        LLM 호출 실패 시 기본 문구로 폴백한다.
         """
         
         client = get_openai_client()
@@ -207,22 +199,21 @@ class ContentGenerator:
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
-            # LLM 호출 실패 시에도 강습 생성이 막히지 않도록 기본 문구로 폴백한다.
+            # LLM 호출 실패해도 강습 생성이 막히지 않도록 기본 문구로 폴백
             print(f"소개 문구 생성 실패: {e}")
             return f"{lesson.title}에 오신 것을 환영합니다!"
     
     @staticmethod
     async def _generate_curriculum(lesson: Lesson) -> dict:
         """
-        커리큘럼 생성 (4~8주차).
-
-        난이도에 따라 기본 주차 수를 정하고, JSON 형식으로만 응답하도록 강하게 제한해
-        파싱 단계에서의 오류를 줄인다.
+        주차별 커리큘럼을 생성한다.
+        난이도에 따라 4~8주차로 구성하고, JSON 형식으로만 응답하도록 제한한다.
+        LLM 호출 실패 시 기본 커리큘럼으로 폴백한다.
         """
         
         client = get_openai_client()
         
-        # 난이도별 주차 수: 고급일수록 더 많은 주차를 제공한다.
+        # 난이도가 높을수록 주차 수 증가
         weeks_by_difficulty = {
             "beginner": 4,
             "elementary": 6,
@@ -270,11 +261,6 @@ class ContentGenerator:
       "week": 1,
       "title": "주차 제목",
       "topics": ["주제1", "주제2", "주제3"]
-    }},
-    {{
-      "week": 2,
-      "title": "주차 제목",
-      "topics": ["주제1", "주제2", "주제3"]
     }}
   ]
 }}"""
@@ -292,7 +278,7 @@ class ContentGenerator:
             
             result_text = response.choices[0].message.content
             
-            # JSON 파싱: 혹시 앞뒤에 설명이 붙더라도 가장 바깥 중괄호 기준으로 잘라낸다.
+            # 앞뒤에 설명이 붙어도 가장 바깥 중괄호 기준으로 JSON만 잘라서 파싱
             start = result_text.find('{')
             end = result_text.rfind('}') + 1
             if start >= 0 and end > start:
@@ -301,7 +287,7 @@ class ContentGenerator:
         except Exception as e:
             print(f"커리큘럼 생성 실패: {e}")
         
-        # 실패 시 기본 커리큘럼
+        # LLM 호출 실패 시 기본 커리큘럼으로 폴백
         return {
             "weeks": [
                 {"week": i, "title": f"{i}주차", "topics": ["기초 동작", "연습", "복습"]}
@@ -312,5 +298,5 @@ class ContentGenerator:
 
 # 기존 함수들 호환성 유지
 async def generate_lesson_content(db, lesson) -> LessonContent:
-    """강습 콘텐츠 생성 (기존 호환성). 신규 코드는 ContentGenerator를 직접 사용하는 것을 권장한다."""
+    """기존 호환성 유지용. 신규 코드는 ContentGenerator를 직접 사용할 것."""
     return await ContentGenerator.generate_full_content(db, lesson)

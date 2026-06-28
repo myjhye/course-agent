@@ -1,9 +1,6 @@
 """
 LangGraph 에이전트 상태 정의.
-
-모든 노드가 공유하는 단일 상태 객체이다. 각 노드는 이 상태를 읽고,
-자기 출력만 병합(merge)해서 반환하며, 그래프가 다음 노드로 전달한다.
-TypedDict이므로 필드는 선택적으로 넣을 수 있고, 노드가 건드리지 않은 키는 유지된다.
+노드 간에 공유되는 단일 상태 객체(TypedDict)로, 각 노드가 이 상태를 참조하거나 업데이트한다.
 """
 
 from typing import TypedDict, Optional, Any, List, Dict, Literal
@@ -11,73 +8,92 @@ from typing import TypedDict, Optional, Any, List, Dict, Literal
 
 class AgentState(TypedDict, total=False):
     """
-    에이전트의 전체 상태. 라우터 → 툴 실행 → 검증 → 재시도/응답 흐름에서
-    단계 간에 넘겨지는 모든 정보가 여기 담긴다.
+    에이전트의 전체 워크플로우 상태.
+    라우팅, 도구 실행, 결과 검증, 재시도, 응답 생성에 이르는 전 과정의 데이터가 저장된다.
     """
 
-    # ── 입력 (chat_service에서 초기 세팅) ──
+    # ── [1. 입력 정보] chat_service에서 대화 시작 시 초기화 ──
+    
     user_message: str
-    # 사용자 원본 메시지. Router/추출/Response 노드에서 공통으로 참조한다.
-
+    # 사용자가 입력한 원본 텍스트 메시지 (라우팅, 파라미터 추출, 최종 응답에 참고)
+    
     student_name: Optional[str]
-    # 수강생 이름. None이면 비로그인/미확인. Response 노드에서 "~님" 등 개인화에 쓴다.
-
+    # 로그인된 수강생 이름 (개인화된 문구 생성에 활용, 미로그인 시 None)
+    
     chat_history: List[Dict[str, str]]
-    # 이전 턴의 [{role, content}, ...]. Response 노드가 맥락을 넣어 답변할 때 사용한다.
-
+    # 이전 대화 내역 목록 (맥락 파악 및 연속 대화를 위한 히스토리 백업)
+    
     trace_id: Optional[str]
-    # Langfuse trace/루트 span ID. 각 노드에서 observation에 metadata로 넣어 같은 대화를 하나의 trace로 묶는다.
-
+    # Langfuse 모니터링 추적용 ID (동일 턴의 모든 관측치를 단일 트레이스로 연계)
+    
     _db: Any
-    # sqlalchemy.ext.asyncio.AsyncSession — 멀티에이전트 경로에서 chat_service가 주입한다.
-    # 서브에이전트가 ToolExecutor 생성 시 참조한다. (TypedDict는 런타임 검사가 없으므로 Any로 둔다.)
+    # SQLAlchemy 비동기 DB 세션 (서브에이전트 내부의 ToolExecutor가 DB 접근 시 사용)
 
-    # ── Router 결과 (router_node가 채움) ──
+    # ── [2. 라우터 정보] router_node에 의해 판정 및 기록 ──
+    
     intent: str
-    # 분류된 의도. "search_lessons" | "get_recommendations" | "manage_enrollment" | "faq_inquiry" | "general_inquiry"
-    # general_inquiry면 툴 없이 바로 Response로 가고, 나머지는 ToolExecutor → Validator 경로를 탄다.
+    # 사용자 입력의 의도 분류 결과 ("search_lessons" | "get_recommendations" | "manage_enrollment" | "faq_inquiry" | "general_inquiry" 등)
 
-    # ── Tool 실행 결과 (tool_executor_node가 채움) ──
+    # ── [3. 도구 실행 이력] 단일 에이전트 모드 호환용 정보 ──
+    
     tool_name: Optional[str]
-    # 이번 턴에 실행한 도구 이름. Response 노드가 "어떤 도구 결과인지" 프롬프트에 넣을 때 쓴다.
-
+    # 현재 실행 또는 직전에 실행 완료된 도구 이름
+    
     tool_args: Optional[Dict[str, Any]]
-    # 해당 도구에 넘긴 인자. 디버깅/로그용.
-
+    # 도구 실행 시 주입된 파라미터 목록 (디버깅 및 로깅 용도)
+    
     tool_result: Optional[Dict[str, Any]]
-    # 도구 반환값 {success, data, ...}. Validator가 is_valid 판단하고, Response가 문장으로 요약할 때 쓴다.
+    # 도구의 반환 결과 데이터 (성공 여부 success 및 실제 데이터 data 포함)
 
-    # ── Validator 결과 (validator_node가 채움) ──
+    # ── [4. 검증 및 재시도] validator_node에 의해 업데이트 ──
+    
     is_valid: bool
-    # Tool 결과가 "성공 + 데이터 있음"이면 True. False면 should_retry_or_respond에서 재시도 여부를 본다.
-
+    # 도구 실행 결과 검증 통과 여부 (데이터 존재 여부 및 유효성 판단 결과)
+    
     retry_count: int
-    # 이번 대화에서 툴 재시도한 횟수. 0=첫 실행, 1~2=재시도. 2 이상이면 더 이상 재시도하지 않고 Response로 넘긴다.
-
+    # 현재 도구의 재시도 누적 횟수 (지정된 임계값 도달 시 재시도 중단 및 응답 처리)
+    
     retry_strategy: Optional[str]
-    # "relax_filters" | "broaden_keyword" 등. ToolExecutor가 재실행 시 인자를 어떻게 완화할지 결정하는 데 쓴다.
+    # 재시도 시 필터를 어떻게 해제할지 결정하는 전략 식별자
 
-    # ── 최종 출력 (Response 노드 / chat_service가 채움) ──
+    # ── [5. 최종 결과 및 메트릭] ──
+    
     response: str
-    # 최종 사용자에게 보낼 자연어. 스트리밍이면 토큰을 모아서 여기 넣거나, 클라이언트에 바로 내려보낸다.
-
+    # 사용자에게 전달할 최종 자연어 응답 텍스트
+    
     tools_used: List[str]
-    # 이번 턴에서 호출된 도구 이름 목록. 같은 도구가 재시도로 여러 번 나와도 누적된다. 분석/로그용.
-
+    # 이번 턴에 호출이 시도된 모든 도구/에이전트 이름 목록 (누적 기록)
+    
     all_tool_results: Dict[str, Any]
-    # 도구별·재시도별 결과를 tool_name_1, tool_name_2 형태로 저장. Langfuse/대시보드에서 비교용.
-
+    # 각 도구별 실행 결과 아카이브 (Langfuse 모니터링 및 디버깅용 수집 데이터)
+    
     total_tokens: int
-    # Router + 추출 + Response 등 모든 LLM 호출의 토큰 합. 비용/모니터링용.
-
+    # 이번 대화 턴 전체에서 소비된 LLM 총 토큰 수 (비용 추적용)
+    
     error: Optional[str]
-    # 예외 발생 시 메시지. 클라이언트에 보낼 fallback 문구를 만들 때 참고할 수 있다.
+    # 실행 중 예외나 에러 발생 시 기록되는 메시지
 
+    # ── [6. 멀티에이전트 라우팅 상태 정보] ──
+    
     routing_mode: Literal["single_agent", "multi_agent", "direct_response"]
+    # 시스템 실행 모드 (단일 에이전트, 멀티 에이전트, 즉시 응답)
+    
     agent_plan: list[Literal["lesson", "enrollment", "faq", "facility"]]
+    # 실행할 서브에이전트들의 순차적 계획 리스트
+    
     current_agent_index: int
+    # 현재 실행 중인 서브에이전트의 agent_plan 내 인덱스 위치
+    
     agent_outputs: dict[str, dict]
+    # 각 서브에이전트별 최종 실행 결과 딕셔너리
+    
     handoff_reason: Optional[str]
+    # 다음 서브에이전트로 제어권을 넘기게 된 사유(핸드오프 원인)
+    
     rerouting_count: int
+    # Supervisor에 의해 동적으로 재라우팅이 일어난 횟수
+    
     rerouted_from: Optional[str]
+    # 재라우팅을 트리거하고 실패했던 이전 에이전트의 이름
+
 

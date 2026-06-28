@@ -1,14 +1,11 @@
 """
-Langfuse 클라이언트를 싱글톤으로 관리하고, 버퍼를 강제 전송한다.
+Langfuse 클라이언트 싱글톤 관리 + 버퍼 강제 전송.
 
-함수:
-- get_langfuse()   : Langfuse 클라이언트 싱글톤 반환
-- flush_langfuse() : 버퍼에 쌓인 기록을 Langfuse 서버로 강제 전송
+- get_langfuse()   : 싱글톤 클라이언트 반환. 키 없거나 초기화 실패하면 None 반환.
+- flush_langfuse() : 버퍼에 쌓인 기록을 즉시 전송. 채팅 요청 끝날 때 호출.
 
-설계 포인트:
-- Langfuse는 선택적으로 쓴다. 키가 있으면 켜지고(LLM 호출 추적), 없으면 꺼진다.
-- 키가 없거나 초기화에 실패해도 None만 반환하고 앱은 그대로 동작한다.
-  호출부는 대부분 `if not langfuse` / trace 없음 분기로 None을 처리한다.
+Langfuse는 보조 시스템이라 실패해도 앱은 그대로 동작해야 한다.
+키가 없거나 오류가 나면 None을 반환하고, 호출부에서 `if not trace:` 분기로 처리한다.
 """
 from typing import Optional
 
@@ -23,11 +20,11 @@ _initialized: bool = False
 
 def get_langfuse() -> Optional[Langfuse]:
     """
-    Langfuse 클라이언트를 한 번만 만들어 재사용하는 싱글톤 접근자다.
+    Langfuse 클라이언트 싱글톤 접근자.
+    처음 호출할 때만 생성하고, 이후엔 캐시된 인스턴스를 그대로 반환한다.
 
-    처음 호출할 때만 클라이언트를 생성하고, 이후 호출에서는 만들어둔 걸 그대로 반환한다.
-    API 키가 없거나 초기화에 실패하면 None을 반환한다.
-    호출부는 None 여부를 확인해 Langfuse 없이도 정상 동작하도록 처리한다.
+    - API 키 없으면 None 반환 → 환경변수 설정만으로 모니터링 on/off 가능
+    - 초기화 실패해도 None 반환 → Langfuse 서버 문제가 채팅에 영향 안 줌
     """
     global _client, _initialized
 
@@ -61,11 +58,14 @@ def get_langfuse() -> Optional[Langfuse]:
 
 def flush_langfuse() -> None:
     """
-    버퍼에 쌓인 Langfuse 이벤트를 서버로 강제 전송한다.
+    버퍼에 쌓인 기록을 Langfuse 서버로 즉시 전송한다.
 
-    Langfuse는 기록을 버퍼에 모았다가 배치로 보낸다.
-    FastAPI처럼 요청이 짧게 끝나면 버퍼가 차기 전에 컨텍스트가 끝나 유실될 수 있어,
-    chat_service 등이 요청 종료 시점에 이 함수를 호출해 비운다.
+    Langfuse는 기록을 버퍼에 모았다가 일정량이 되면 한꺼번에 보낸다.
+    FastAPI는 요청이 끝나도 프로세스가 살아있어서 버퍼가 차기 전까지 전송이 안 된다.
+    서버가 비정상 종료되면 버퍼에 쌓인 기록이 유실되니까, 채팅 요청이 끝나는
+    시점에 이 함수를 호출해서 버퍼를 즉시 비운다.
+
+    flush 실패는 기록 일부 유실일 뿐, 채팅 응답에는 영향 없다.
     """
     client = get_langfuse()
     if not client:

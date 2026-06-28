@@ -1,12 +1,6 @@
 """
-Facility MCP Server HTTP 클라이언트.
-
-fastmcp.Client를 감싼 얇은 래퍼. 요청 단위로 Client를 열고 닫는다.
-
-설계:
-- URL 미설정 시 예외를 발생시켜 facility_agent가 표준 실패 경로를 타게 한다
-- 타임아웃/예외는 호출자(facility_agent)에게 전파한다
-- 응답 언팩은 facility_agent에서 처리한다 (도메인 로직 분리)
+외부 MCP 서버(체육시설 검색, 구글 캘린더)의 원격 도구(Tool)를 비동기로 호출하는 클라이언트 모듈.
+- 도구를 호출할 때마다 연결을 새로 열고, 작업이 끝나면 자동으로 닫히도록 설계되어 있다.
 """
 
 from typing import Any, Dict, Optional
@@ -17,14 +11,14 @@ from app.config import settings
 
 
 class FacilityMcpClient:
-    """facility MCP 서버 호출 전용 클라이언트."""
+    """공공 체육시설(Facility) 검색 MCP 서버 호출용 클라이언트."""
 
     def __init__(self, url: Optional[str] = None, timeout: Optional[float] = None):
         self.url = url or settings.facility_mcp_url
         self.timeout = timeout or settings.facility_mcp_timeout_seconds
 
     def is_configured(self) -> bool:
-        """URL이 설정됐는지 확인. False면 호출 시도하지 말 것."""
+        """클라이언트 접속 엔드포인트 URL이 설정되어 있는지 확인한다."""
         return bool(self.url)
 
     async def call_tool(
@@ -33,8 +27,8 @@ class FacilityMcpClient:
         arguments: Dict[str, Any],
     ) -> Any:
         """
-        facility MCP 서버의 tool을 호출한다.
-        예외(연결 실패, 타임아웃, MCP 에러)는 호출자에게 그대로 전파한다.
+        체육시설 검색 MCP 서버에 기동된 원격 도구(Tool)를 직접 실행하고 결과를 반환한다.
+        - 예외(네트워크 타임아웃, 연동 서버 실패 등)는 안전한 폴백(Relaxation) 유도를 위해 호출자에게 그대로 전파한다.
         """
         if not self.is_configured():
             raise RuntimeError("FACILITY_MCP_URL is not configured")
@@ -44,14 +38,14 @@ class FacilityMcpClient:
 
 
 class CalendarMcpClient:
-    """calendar MCP 서버 호출 전용 클라이언트."""
+    """구글 캘린더(Calendar) 일정 연동 MCP 서버 호출용 클라이언트."""
 
     def __init__(self, url: Optional[str] = None, timeout: Optional[float] = None):
         self.url = url or settings.calendar_mcp_url
         self.timeout = timeout or settings.calendar_mcp_timeout_seconds
 
     def is_configured(self) -> bool:
-        """URL이 설정됐는지 확인. False면 호출 시도하지 말 것."""
+        """클라이언트 접속 엔드포인트 URL이 설정되어 있는지 확인한다."""
         return bool(self.url)
 
     async def call_tool(
@@ -60,7 +54,8 @@ class CalendarMcpClient:
         arguments: Dict[str, Any],
     ) -> Any:
         """
-        calendar MCP 서버의 tool을 호출한다.
+        구글 캘린더 연동 MCP 서버에 기동된 원격 도구(Tool)를 직접 실행하고 결과를 반환한다.
+        - 예외(구글 인증 에러, 네트워크 타임아웃 등)는 호출 에이전트 계층에게 직접 전파한다.
         """
         if not self.is_configured():
             raise RuntimeError("CALENDAR_MCP_URL is not configured")
@@ -69,6 +64,8 @@ class CalendarMcpClient:
             return await client.call_tool(tool_name, arguments)
 
 
+# 전역에서 재사용할 싱글톤 게이트웨이 인스턴스 정의
 facility_mcp_client = FacilityMcpClient()
 calendar_mcp_client = CalendarMcpClient()
+
 

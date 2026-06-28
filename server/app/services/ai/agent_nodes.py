@@ -1,11 +1,6 @@
 """
-에이전트 실행 결과를 받아 최종 자연어 응답을 생성
-
-- _get_trace: Langfuse 클라이언트 반환 (전 파일 공유)
-- _extract_search_args: 자연어 → 강습 검색 조건 추출 (lesson_agent에서 사용)
-- _extract_faq_keyword: 자연어 → RAG 검색용 키워드 추출 (faq_agent에서 사용)
-- response_node: 에이전트 결과 받아 최종 응답 생성 (비스트리밍)
-- response_node_stream: 에이전트 결과 받아 최종 응답 생성 (스트리밍, SSE)
+에이전트별 추론/검색 결과를 수집하고 가공하여
+사용자 친화적인 최종 자연어 답변을 비스트리밍 또는 스트리밍 방식으로 생성한다.
 """
 
 import json
@@ -17,17 +12,15 @@ from app.services.ai.langfuse_client import get_langfuse
 
 
 def _get_trace():
-    """Langfuse 클라이언트 반환. 설정 없으면 None."""
+    """Langfuse 모니터링 클라이언트 인스턴스를 반환한다 (미설정 시 None)."""
     return get_langfuse()
 
 
 async def _extract_search_args(client, state: AgentState) -> Dict[str, Any]:
-    # 자연어 질문을 DB 검색 조건으로 변환
-    # "초급 수영 있어?" → {"sport_type": "swimming", "difficulty": "beginner"}
-    # lesson_agent가 DB 조회 전에 이 함수를 먼저 호출
-
-    # 프롬프트에 허용 값 목록을 명시해서 GPT가 임의 문자열 만들지 않게 함
-    # DB enum 값과 일치해야 검색이 제대로 동작
+    """
+    사용자의 자연어 질문으로부터 강습 검색 조건(종목, 난이도, 대상, 키워드)을 추출하여 구조화된 사전 형식으로 반환한다.
+    - lesson_agent가 DB 조회를 수행하기 전에 호출하여 필터링 인자를 표준화한다.
+    """
     prompt = f"""사용자 메시지에서 강습 검색 조건을 추출하세요.
 
 메시지: "{state['user_message']}"
@@ -44,7 +37,7 @@ JSON으로 응답 (해당 없는 필드는 null):
 
     try:
         if trace:
-            # 인자 추출도 "어떤 입력→어떤 인자"가 나왔는지" Langfuse에서 재현 가능하게 generation으로 남긴다.
+            # 관측 가능하도록 Langfuse Generation 계측 시작
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "extract_search_args",
@@ -68,15 +61,14 @@ JSON으로 응답 (해당 없는 필드는 null):
                     if getattr(response, "usage", None)
                     else 0
                 )
-                args = json.loads(response.choices[0].message.content) # JSON 문자열 → 딕셔너리
-                cleaned = {k: v for k, v in args.items() if v is not None} # null/빈 값은 DB 필터에 넣지 않아 "조건 없음"으로 해석되게 한다.
+                args = json.loads(response.choices[0].message.content)
+                cleaned = {k: v for k, v in args.items() if v is not None}
 
                 gen.update(
                     output=cleaned,
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            # Langfuse 없으면 그냥 GPT 호출만
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
@@ -89,16 +81,15 @@ JSON으로 응답 (해당 없는 필드는 null):
 
         return cleaned
     except Exception:
-        # 파싱/LLM 오류 시 원문을 keyword로 넘겨, 최소한 ILIKE 폴백이라도 동작하게 한다.
+        # LLM 파싱 예외 시 원본 메시지를 키워드로 할당하여 최소한의 와일드카드 매칭 유도
         return {"keyword": state["user_message"]}
 
 
 async def _extract_faq_keyword(client, state: AgentState) -> Dict[str, Any]:
-    # 자연어 질문을 RAG 벡터 검색에 최적화된 키워드로 변환
-    # "환불은 어떻게 받나요?" → {"keyword": "환불 방법"}
-    # 존댓말/접속사 제거하면 knowledge_chunks와 유사도가 올라가 FAQ 매칭 품질 향상
-    # faq_agent가 RAG 검색 전에 이 함수를 먼저 호출
-
+    """
+    RAG 벡터 유사도 검색의 검색 정확도를 높이기 위해, 자연어 질문에서 접속사와 존댓말을 정제한 핵심 검색 질의문을 추출한다.
+    - faq_agent가 RAG 검색을 시작하기 전에 키워드를 최적화하는 데 활용한다.
+    """
     prompt = f"""사용자 질문에서 벡터 검색에 사용할 핵심 문장을 추출하세요.
 
 메시지: "{state['user_message']}"
@@ -115,7 +106,6 @@ JSON으로 응답:
 
     try:
         if trace:
-            # Langfuse가 있으면 GPT 호출을 generation으로 기록
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "extract_faq_keyword",
@@ -139,14 +129,13 @@ JSON으로 응답:
                     if getattr(response, "usage", None)
                     else 0
                 )
-                payload = json.loads(response.choices[0].message.content) # JSON 문자열 → 딕셔너리
+                payload = json.loads(response.choices[0].message.content)
 
                 gen.update(
                     output=payload,
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            # Langfuse 없으면 그냥 GPT 호출만
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": prompt}],
@@ -158,34 +147,28 @@ JSON으로 응답:
 
         return payload
     except Exception:
-        return {"keyword": state["user_message"]} # GPT 호출 실패 시 원문을 keyword로 넘김 → 최소한 검색이라도 동작하게
+        # LLM 파싱 예외 발생 시 질문 원문 자체를 검색 키워드로 폴백 처리
+        return {"keyword": state["user_message"]}
 
-
-# ============================================================
-# Response 노드: 최종 응답 생성
-# ============================================================
 
 async def response_node(state: AgentState) -> Dict[str, Any]:
-    # 에이전트 검색 결과를 받아 사용자에게 보여줄 최종 자연어 응답 생성
-    # 비스트리밍 버전. (응답 다 만들어지면 한 번에 반환)
-    # 스트리밍은 response_node_stream 사용
-
+    """
+    비스트리밍 방식으로 에이전트의 검색 성과물을 취합하여 사용자에게 제시할 최종 자연어 응답을 일괄 생성한다.
+    - 이전 대화 맥락(chat_history)을 반영하여 일관된 답변 흐름을 유지한다.
+    """
     client = get_openai_client()
     intent = state["intent"]
-    student_name = state.get("student_name") # 로그인 사용자면 이름 있음
+    student_name = state.get("student_name")
 
-    # 수강생 이름 있으면 이름 포함한 프롬프트, 없으면 익명 프롬프트
     system_prompt = _build_response_prompt(student_name)
-
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
-    # 이전 대화 맥락 추가 → "아까 말한 수영 강습이요" 같은 후속 질문에도 대응
     for msg in state.get("chat_history", []):
         messages.append({"role": msg["role"], "content": msg["content"]})
 
     user_content = f"사용자 질문: {state['user_message']}"
 
-    # 에이전트가 검색한 결과가 있으면 GPT에게 넘겨서 요약/안내하게 함
+    # 서브에이전트가 탐색한 결과 세트가 존재하면 시스템 지침과 함께 LLM에 동적으로 바인딩
     if intent != "general_inquiry" and state.get("tool_result") is not None:
         tool_result = state["tool_result"] or {}
         user_content += (
@@ -194,7 +177,6 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
             f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
         )
 
-        # 검색 결과 없을 때 GPT에게 명시 → 거짓 정보 생성 방지
         if not tool_result.get("success") or not tool_result.get("data"):
             user_content += (
                 "\n\n주의: 검색 결과가 없습니다. "
@@ -207,7 +189,6 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
 
     try:
         if trace:
-            # Langfuse가 있으면 GPT 호출을 generation으로 기록
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "response",
@@ -222,7 +203,7 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
                 response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
-                    temperature=0.7, # 자연스러운 응답을 위해 0.7
+                    temperature=0.7,
                     max_tokens=1500,
                 )
 
@@ -241,7 +222,6 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
                     usage_details={"total_tokens": tokens},
                 )
         else:
-            # Langfuse 없으면 그냥 GPT 호출만
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
@@ -260,12 +240,11 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
             )
 
         return {
-            "response": content, # 최종 자연어 응답
-            "total_tokens": state.get("total_tokens", 0) + tokens, # 누적 토큰 수
+            "response": content,
+            "total_tokens": state.get("total_tokens", 0) + tokens,
         }
 
     except Exception as e:
-        # 에러 발생해도 사용자에게 빈 응답 대신 안내 메시지 반환
         print(f"[Response] 에러: {e}")
         return {
             "response": "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
@@ -274,16 +253,15 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
 
 
 def _build_response_prompt(student_name: Optional[str]) -> str:
-    # response_node, response_node_stream이 GPT에게 줄 시스템 프롬프트 생성
-    # 수강생 이름 유무에 따라 프롬프트 내용이 달라짐
-
-    # 이름 있으면 GPT가 이름 붙여서 말하도록
+    """
+    최종 자연어 답변 생성을 위한 상담사 페르소나 및 응답 규칙 정의 시스템 프롬프트를 동적으로 조립한다.
+    - 세션 정보에 수강생의 실명이 존재할 경우 프롬프트에 동적으로 개인화 지침을 주입한다.
+    """
     if student_name:
         name_part = (
             f"\n현재 수강생: {student_name}\n"
             "이 이름을 자연스럽게 사용하되, 과하게 반복하지 마세요."
         )
-    # 이름 없으면 익명 안내 → GPT가 과도한 개인화 하지 않도록
     else:
         name_part = "\n수강생 이름이 확인되지 않았습니다."
 
@@ -300,24 +278,22 @@ def _build_response_prompt(student_name: Optional[str]) -> str:
 
 
 async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, Any], None]:
-    # response_node의 스트리밍 버전 (토큰 단위로 실시간 전송)
-    # GPT 응답을 토큰 단위로 yield → chat_service가 SSE로 프론트에 전송 → 타이핑 효과
-
+    """
+    스트리밍(SSE) 방식으로 청크 토큰을 실시간 생성하여 chat_orchestrator에 제공하는 비동기 제너레이터 노드.
+    - OpenAI 스트림 API의 chunk 단위 토큰과 최종 usage 메트릭을 yield한다.
+    """
     client = get_openai_client()
     intent = state["intent"]
     student_name = state.get("student_name")
 
-    system_prompt = _build_response_prompt(student_name) # 수강생 이름 유무에 따라 프롬프트 생성
-
+    system_prompt = _build_response_prompt(student_name)
     messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
-    # 이전 대화 맥락 추가 → 후속 질문에도 대응
     for msg in state.get("chat_history", []):
         messages.append({"role": msg["role"], "content": msg["content"]})
 
     user_content = f"사용자 질문: {state['user_message']}"
 
-    # 에이전트가 검색한 결과가 있으면 GPT에게 넘겨서 요약/안내하게 함
     if intent != "general_inquiry" and state.get("tool_result") is not None:
         tool_result = state["tool_result"] or {}
         user_content += (
@@ -326,7 +302,6 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
             f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
         )
 
-        # 검색 결과 없을 때 GPT에게 명시 → 거짓 정보 생성 방지
         if not tool_result.get("success") or not tool_result.get("data"):
             user_content += (
                 "\n\n주의: 검색 결과가 없습니다. "
@@ -339,7 +314,6 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
 
     try:
         obs_ctx = None
-        # Langfuse가 있으면 GPT 호출을 generation으로 기록
         if trace:
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
@@ -353,7 +327,6 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
 
             obs_ctx = trace.start_as_current_observation(**obs_kwargs)
 
-        # Langfuse가 없을 때는 context manager가 필요 없으므로, 아무 것도 하지 않는 _Noop을 쓴다.
         if obs_ctx is not None:
             ctx = obs_ctx
         else:
@@ -372,11 +345,11 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
                 messages=messages,
                 temperature=0.7,
                 max_tokens=1500,
-                stream=True, # stream=True로 하면 응답이 한 번에 오지 않고 청크 단위로 온다.
-                stream_options={"include_usage": True}, # 마지막 청크에 토큰 사용량 포함
+                stream=True,
+                stream_options={"include_usage": True},
             )
 
-            full_content = "" # 전체 응답 누적 (Langfuse 기록용)
+            full_content = ""
             total_tokens = 0
 
             async for chunk in stream:
@@ -384,17 +357,16 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
                 delta = choice.delta if choice else None
 
                 if delta and delta.content:
-                    text = delta.content    # "안", "녕", "하" 토큰 조각
-                    full_content += text    # 전체 텍스트에 누적
-                    # 이 토큰을 chat_service가 SSE "token" 이벤트로 프론트에 보낸다.
+                    text = delta.content
+                    full_content += text
+                    # chat_orchestrator가 읽을 수 있도록 개별 텍스트 청크 방출
                     yield {"type": "token", "content": text}
 
-                # usage는 스트림 맨 마지막 청크에 한 번만 옴
+                # 스트림 마지막에 정산되는 토큰 정보 수집
                 if getattr(chunk, "usage", None):
                     total_tokens = chunk.usage.total_tokens or 0
 
             if gen is not None:
-                # Langfuse에 전체 응답 + 토큰 사용량 기록
                 try:
                     gen.update(
                         output=full_content,
@@ -403,13 +375,12 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
                 except Exception:
                     pass
 
-            # chat_service가 누적 토큰 수 집계에 사용
+            # 누적 토큰 계측용 메트릭 방출
             if total_tokens:
                 yield {"type": "usage", "total_tokens": total_tokens}
 
     except Exception as e:
         print(f"[Response Stream] 에러: {e}")
-        # 스트리밍 중 예외가 나도 빈 응답으로 끝나지 않게 에러 메시지 전송
         yield {
             "type": "token",
             "content": "죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
