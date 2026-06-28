@@ -141,7 +141,7 @@ sequenceDiagram
     participant router as app/routers/chat.py
     participant service as app/services/chat_orchestrator.py
     participant graph as app/services/ai/agent_graph.py
-    participant supervisor as app/services/ai/routing_nodes.py
+    participant supervisor as app/services/ai/orchestration_nodes.py
     participant agents as app/services/ai/agents/<br>(lesson/enroll/faq/facility/calendar)
     participant mcp as app/services/ai/mcp_client.py
     participant db as DB (Postgres/pgvector/RAG)
@@ -180,7 +180,7 @@ sequenceDiagram
 |---|---|
 | `server/app/services/ai/agent_graph.py` | 그래프 빌더, 조건부 분기 |
 | `server/app/services/ai/agent_state.py` | TypedDict 스키마 |
-| `server/app/services/ai/routing_nodes.py` | Supervisor + Aggregator + reroute_supervisor |
+| `server/app/services/ai/orchestration_nodes.py` | Supervisor + Aggregator + reroute_supervisor |
 | `server/app/services/ai/agents/base.py` | `make_subagent` 팩토리 |
 | `server/app/services/ai/agents/{lesson,enrollment,faq,facility,calendar}_agent.py` | 5개 도메인 서브에이전트 |
 | `server/app/services/ai/mcp_client.py` | facility / calendar MCP 호출 클라이언트 |

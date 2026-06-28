@@ -1,6 +1,9 @@
 """
-Supervisor 및 Rerouting 오케스트레이션 노드 정의.
-사용자 요청을 해석하여 최적의 서브에이전트 실행 계획을 수립하고, 실행 결과의 유효성 검증 및 실패 시의 대체 라우팅을 관리한다.
+supervisor, aggregator, reroute_supervisor 노드 함수 정의.
+
+- supervisor_node     : 사용자 질문 분석 → 어떤 에이전트를 실행할지 계획 수립
+- aggregator_node     : 에이전트 결과 수집 → 성공/실패 판정
+- reroute_supervisor_node : 실패 시 다른 에이전트로 재시도 결정 (1회)
 """
 
 import json
@@ -11,8 +14,8 @@ from app.services.ai.agent_nodes import _get_trace
 from app.services.ai.llm_client import get_openai_client
 
 
-# Supervisor LLM(GPT-4o-mini)에 인스트럭션으로 전송될 시스템 프롬프트.
-# 입력 인텐트에 따라 적합한 서브에이전트 목록을 도출하고 단일(single_agent), 멀티(multi_agent), 직접 응답(direct_response) 모드를 정의한다.
+# supervisor가 GPT에게 넘기는 시스템 프롬프트.
+# 사용자 질문을 보고 어떤 에이전트를 써야 하는지 JSON으로 반환하도록 지시한다.
 _SUPERVISOR_PROMPT = """당신은 Course Agent의 Supervisor 에이전트입니다.
 사용자 메시지를 분석해 어떤 서브에이전트가 응답에 필요한지 결정하세요.
 
@@ -57,10 +60,11 @@ agents는 실행 순서대로 작성
 
 async def supervisor_node(state: AgentState) -> Dict[str, Any]:
     """
-    사용자 입력 메시지를 분석하여 실행할 서브에이전트 목록과 동작 모드 계획을 수립한다.
-    - LLM 호출을 통해 JSON 형태로 모드(mode) 및 대상 에이전트 목록(agents)을 추론한다.
-    - 획득한 결과에 대해 유효한 모드 검증 및 대상 서브에이전트 유효성 필터링을 방어적으로 수행한다.
-    - Langfuse 모니터링을 위해 generation 관측치를 기록한다.
+    사용자 질문을 GPT-4o-mini로 분석해서 어떤 에이전트를 실행할지 계획을 수립한다.
+    결과를 state에 저장하면 dispatcher가 읽어서 에이전트를 순서대로 실행한다.
+
+    GPT 응답에 허용되지 않은 에이전트 이름이나 잘못된 mode가 오면 방어 처리로 걸러낸다.
+    예외 발생 시 direct_response로 강제해서 에러가 사용자에게 노출되지 않게 한다.
     """
     client = get_openai_client()
     trace = _get_trace()
@@ -73,7 +77,7 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
 
     try:
         if trace:
-            # Langfuse가 활성화된 경우 생성(generation) 정보 및 메타데이터 트래킹 수행
+            # Langfuse에 supervisor LLM 호출 기록 (어떤 질문이 어떤 계획으로 이어졌는지 추적)
             obs_kwargs: Dict[str, Any] = {
                 "as_type": "generation",
                 "name": "supervisor",
@@ -91,9 +95,9 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 response = await client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
-                    temperature=0,
-                    max_tokens=200,
-                    response_format={"type": "json_object"},
+                    temperature=0,       # 항상 일관된 판단
+                    max_tokens=200,      # JSON 짧으니까 200으로 충분
+                    response_format={"type": "json_object"},  # JSON만 반환하도록 강제
                 )
                 tokens = (
                     response.usage.total_tokens
@@ -121,15 +125,13 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
         agents: List[str] = payload.get("agents") or []
         reason = payload.get("reason")
 
-        # 허용 모드 값에 대한 무결성 보정
+        # 허용되지 않은 mode면 direct_response로 강제
         valid_modes = {"single_agent", "multi_agent", "direct_response"}
         if mode not in valid_modes:
             mode = "direct_response"
 
-        # 사전에 약속된 서브에이전트 화이트리스트
+        # 허용된 에이전트 이름만 통과. GPT가 잘못된 이름을 반환할 수 있어서 방어 처리
         valid_agents = {"lesson", "enrollment", "faq", "facility", "calendar"}
-
-        # 중복 에이전트 제거 및 유효하지 않은 임의의 텍스트가 섞여 들어오는 것을 방지
         seen = set()
         filtered: List[str] = []
         for a in agents:
@@ -138,31 +140,32 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
                 seen.add(a)
         agents = filtered
 
-        # 동작 모드 유형별 무결성 강제 매핑 규칙 적용
+        # mode별 무결성 보정
         if mode == "direct_response":
-            agents = []
+            agents = []  # direct면 에이전트 필요 없음
         elif mode == "single_agent":
-            agents = agents[:1]
+            agents = agents[:1]  # single이면 1개만
             if not agents:
-                mode = "direct_response"
+                mode = "direct_response"  # 에이전트 없으면 direct로 강등
         elif mode == "multi_agent":
             if len(agents) < 2:
+                # multi라면서 에이전트가 1개 이하면 single로 강등
                 mode = "single_agent" if agents else "direct_response"
                 if mode == "single_agent":
                     agents = agents[:1]
 
-        # 디스패치 노드에서 처리할 전역 에이전트 실행 계획 세팅
         return {
-            "routing_mode": mode,
-            "agent_plan": agents,
-            "current_agent_index": 0,
-            "agent_outputs": {},
-            "handoff_reason": reason,
-            "rerouting_count": 0,
+            "routing_mode": mode,        # dispatcher가 읽어서 분기
+            "agent_plan": agents,        # 실행할 에이전트 목록. 예: ["lesson", "faq"]
+            "current_agent_index": 0,    # 첫 번째 에이전트부터 시작
+            "agent_outputs": {},         # 에이전트 결과 저장용 초기화
+            "handoff_reason": reason,    # GPT가 설명한 판단 이유
+            "rerouting_count": 0,        # 재라우팅 횟수 초기화
             "total_tokens": state.get("total_tokens", 0) + tokens,
         }
 
     except Exception as e:
+        # 예외 발생 시 direct_response로 강제. 에러가 사용자에게 노출되지 않게 한다
         print(f"[Supervisor] 에러: {e}")
         return {
             "routing_mode": "direct_response",
@@ -178,11 +181,13 @@ async def supervisor_node(state: AgentState) -> Dict[str, Any]:
 
 def aggregator_node(state: AgentState) -> Dict[str, Any]:
     """
-    서브에이전트 동작이 끝난 직후 실행되어, 각 에이전트의 실행 결과를 취합하고 성공/실패 여부를 판정한다.
-    - 성공 판정 기준: success=True 이며 data 필드 내 실제 결과가 존재할 것.
-    - 멀티 에이전트 모드일 경우 실행 계획 중 하나라도 유효한 결과를 가지면 전체 흐름을 성공(is_valid=True)으로 취급한다.
-    - 단일 에이전트 모드일 경우 방금 실행된 에이전트의 성공 여부로 판정한다.
-    - 응답 생성 노드(response_node)에 연계할 '대표 결과(main_result)'를 선정하며, 유효한 결과가 없다면 최종 실패한 결과의 에러 정보를 할당한다.
+    에이전트 실행이 끝날 때마다 호출된다.
+    결과를 수집하고 is_valid를 판정한 뒤 current_agent_index를 올린다.
+
+    성공 기준: success=True이고 data가 있어야 유효.
+    - 싱글 에이전트: 방금 실행한 에이전트 결과만 판정
+    - 멀티 에이전트: 지금까지 실행된 에이전트 중 하나라도 유효하면 True
+      (lesson 성공, facility 실패여도 lesson 결과로 답변할 수 있어서)
     """
     plan = state.get("agent_plan") or []
     idx = state.get("current_agent_index", 0)
@@ -191,18 +196,16 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
 
     just_ran = plan[idx] if idx < len(plan) else None
 
-    # 성공 조건 검증 헬퍼
     def _is_agent_valid(name: str) -> bool:
         r = outputs.get(name) or {}
         return bool(r.get("success")) and bool(r.get("data"))
 
-    # 멀티에이전트와 단일 에이전트 시나리오별 성공 여부 식별
     if mode == "multi_agent":
         is_valid = any(_is_agent_valid(n) for n in plan[: idx + 1])
-    else: 
+    else:
         is_valid = _is_agent_valid(just_ran) if just_ran else False
 
-    # 여러 실행 이력 중 최종적으로 유효한 가장 마지막 결과물을 사용자 응답 연계용 메인으로 지정
+    # response_node에 넘길 대표 결과 선정. 유효한 결과 중 가장 마지막에 실행된 것
     main_name = None
     main_result = None
     for n in reversed(plan[: idx + 1]):
@@ -210,12 +213,13 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
             main_name = n
             main_result = outputs[n]
             break
+            
     if main_name is None and just_ran:
-        # 매칭되는 유효 데이터가 전부 없더라도 실패 이유 가이드를 생성하기 위해 최종 실행 정보를 바인딩
+        # 매칭되는 유효 데이터가 전부 없더라도 실패 이유 생성을 위해 최종 실행 정보를 넘겨준다
         main_name = just_ran
         main_result = outputs.get(just_ran)
 
-    # Langfuse 수집 기능 등록
+    # Langfuse에 aggregator 실행 기록
     trace = _get_trace()
     if trace:
         try:
@@ -251,8 +255,7 @@ def aggregator_node(state: AgentState) -> Dict[str, Any]:
     }
 
 
-# 단일 서브에이전트 실행 결과가 실패(is_valid=False)했을 때, 교차 재시도를 수행할 대체 서브에이전트 매핑 테이블.
-# 예: 강습(lesson) 실패 시 faq로 전환, 수강 조회/추천(enrollment) 및 체육시설(facility) 등 실패 시 lesson으로 전환.
+# 1차 에이전트 실행이 실패했을 때, 교차 재시도할 에이전트 매핑
 _REROUTE_MAP = {
     "lesson": "faq",
     "faq": "lesson",
@@ -264,9 +267,9 @@ _REROUTE_MAP = {
 
 def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
     """
-    1차 서브에이전트 실행이 실패한 경우, 사전에 정의된 재라우팅 맵(_REROUTE_MAP)을 기반으로 대체 에이전트를 자동 편성한다.
+    1차 에이전트 실행이 실패한 경우, 다른 에이전트로 교차 재시도를 결정한다.
     - 무한 루프를 방지하기 위해 이미 실행을 시도했던 에이전트는 제외한다.
-    - 대체 에이전트가 존재하고 실행 이력이 없다면 실행 계획(agent_plan) 뒤에 덧붙이고, 실행 인덱스(current_agent_index)를 업데이트하여 재시도를 진행한다.
+    - 대체 에이전트가 존재하고 실행 이력이 없다면 실행 계획(agent_plan) 뒤에 덧붙이고, 인덱스를 조정한다.
     """
     plan = state.get("agent_plan") or []
     outputs = state.get("agent_outputs") or {}
@@ -276,14 +279,14 @@ def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
     last_agent = plan[-1] if plan else None
     next_agent = _REROUTE_MAP.get(last_agent) if last_agent else None
 
-    # 매핑 데이터가 부재하거나 이미 교차 실행을 수행한 이력이 있으면 재라우팅 실패 처리 및 대기
+    # 이미 실행해 본 에이전트거나 매핑이 없으면 재시도 포기
     if next_agent is None or next_agent in tried:
         result: Dict[str, Any] = {
             "rerouting_count": current_count + 1,
             "rerouted_from": last_agent,
         }
     else:
-        # 신규 폴백 에이전트를 추가로 지정하고 인덱스 갱신을 통해 라우팅 제어권 전환
+        # 계획 뒤에 새 에이전트를 추가하고, 인덱스를 그 에이전트 위치로 조정
         new_plan = list(plan) + [next_agent]
         result = {
             "agent_plan": new_plan,
@@ -292,7 +295,7 @@ def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
             "rerouted_from": last_agent,
         }
 
-    # Langfuse 수집 기능 등록
+    # Langfuse에 reroute_supervisor 실행 기록
     trace = _get_trace()
     if trace:
         try:
@@ -321,4 +324,5 @@ def reroute_supervisor_node(state: AgentState) -> Dict[str, Any]:
             pass
 
     return result
+
 

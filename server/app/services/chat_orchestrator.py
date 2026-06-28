@@ -506,7 +506,7 @@ class ChatOrchestrator:
             lesson_agent,
             calendar_agent,
         )
-        from app.services.ai.routing_nodes import (
+        from app.services.ai.orchestration_nodes import (
             aggregator_node,
             reroute_supervisor_node,
             supervisor_node,

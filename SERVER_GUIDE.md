@@ -16,7 +16,7 @@ sequenceDiagram
     participant router as routers/chat.py
     participant service as services/chat_orchestrator.py
     participant graph as services/ai/agent_graph.py
-    participant supervisor as services/ai/routing_nodes.py
+    participant supervisor as services/ai/orchestration_nodes.py
     participant executor as services/ai/tool_executor.py
     participant mcp as services/ai/mcp_client.py
     participant db as Database / FAQ RAG
@@ -89,7 +89,7 @@ sequenceDiagram
 * **`agent_graph.py`**
   * **역할**: 에이전트들과 총괄 관리자(Supervisor)를 노드로 구성하고, 각 노드가 실행을 마친 뒤 어느 노드로 흘러갈지 제어 조건(Edge)을 설정하여 LangGraph 인스턴스를 빌드합니다.
   * **연결 관계**: `chat_orchestrator.py`가 인스턴스를 받아서 연산을 구동합니다.
-* **`routing_nodes.py`**
+* **`orchestration_nodes.py`**
   * **역할**: 
     1. **Supervisor**: 질문의 유형을 분별하여 수강/강습/체육시설/FAQ 중 필요한 곳에 임무를 라우팅합니다.
     2. **Aggregator**: 수집 결과를 검증하고, 실패한 경우 자가 수정 우회 라우팅(Heuristic Rerouting)을 지정합니다.
