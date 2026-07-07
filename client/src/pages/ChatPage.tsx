@@ -202,7 +202,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-row bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
+    <div className="flex flex-row bg-slate-100" style={{ height: 'calc(100vh - 64px)' }}>
       {/* 좌측 세션 탭 (모바일에서는 숨김) */}
       <aside className="hidden md:flex w-64 flex-none bg-white border-r border-slate-100 flex-col p-4 gap-2">
         {/* 새 대화 버튼 */}
@@ -215,7 +215,7 @@ export default function ChatPage() {
         </button>
 
         {/* 세션 목록 */}
-        <div className="flex flex-col gap-1 mt-2 overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
+        <div className="flex flex-col gap-1 mt-2 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
           {sessions.map((s) => (
             <div
               key={s.session_id}
@@ -386,7 +386,7 @@ export default function ChatPage() {
 
         {/* Input Area */}
         <div className="flex-none bg-white p-4 sm:p-6 border-t border-slate-100 z-10">
-        <div className="relative flex items-end gap-3 max-w-4xl mx-auto">
+        <div className="relative flex items-end gap-3 max-w-2xl mx-auto">
           <div className="flex-1 relative">
             <textarea
               value={input}
@@ -405,9 +405,6 @@ export default function ChatPage() {
           >
             <span className="material-symbols-outlined">send</span>
           </button>
-        </div>
-        <div className="text-center mt-3">
-          <p className="text-[10px] text-slate-400">AI는 실수할 수 있습니다. 중요한 정보는 확인해 주세요.</p>
         </div>
         </div>
 
