@@ -182,6 +182,25 @@ export default function ChatPage() {
     }
   };
 
+  /** 대화 세션 삭제 처리 */
+  const handleDeleteSession = async (e: React.MouseEvent, sid: string) => {
+    e.stopPropagation(); // 세션 선택 핸들러 호출 방지
+    if (!window.confirm('대화를 삭제하시겠습니까?')) return;
+
+    try {
+      await chatApi.deleteSession(sid);
+      const updated = await chatApi.getSessions();
+      setSessions(updated);
+
+      if (sid === sessionId) {
+        handleNewChat();
+      }
+    } catch (err) {
+      console.error('Failed to delete session:', err);
+      alert('대화 삭제에 실패했습니다.');
+    }
+  };
+
   return (
     <div className="flex flex-row bg-slate-100" style={{ height: 'calc(100vh - 180px)' }}>
       {/* 좌측 세션 탭 (모바일에서는 숨김) */}
@@ -196,19 +215,28 @@ export default function ChatPage() {
         </button>
 
         {/* 세션 목록 */}
-        <div className="flex flex-col gap-1 mt-2">
+        <div className="flex flex-col gap-1 mt-2 overflow-y-auto max-h-[calc(100vh-270px)] pr-1">
           {sessions.map((s) => (
-            <button
+            <div
               key={s.session_id}
               onClick={() => handleSelectSession(s.session_id)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm truncate transition-colors ${
+              className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors ${
                 s.session_id === sessionId
                   ? 'bg-primary/10 text-primary font-medium'
                   : 'text-slate-600 hover:bg-slate-50'
               }`}
             >
-              {s.title || '새 대화'}
-            </button>
+              <span className="truncate flex-1 pr-2">
+                {s.title || '새 대화'}
+              </span>
+              <button
+                onClick={(e) => handleDeleteSession(e, s.session_id)}
+                className="hidden group-hover:flex items-center justify-center p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors"
+                title="대화 삭제"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            </div>
           ))}
         </div>
       </aside>
