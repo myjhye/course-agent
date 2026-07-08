@@ -169,19 +169,31 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
     user_content = f"사용자 질문: {state['user_message']}"
 
     # 서브에이전트가 탐색한 결과 세트가 존재하면 시스템 지침과 함께 LLM에 동적으로 바인딩
-    if intent != "general_inquiry" and state.get("tool_result") is not None:
-        tool_result = state["tool_result"] or {}
-        user_content += (
-            f"\n\n[도구 실행 결과]\n"
-            f"도구: {state.get('tool_name')}\n"
-            f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
-        )
+    if intent != "general_inquiry":
+        mode = state.get("routing_mode", "single_agent")
+        agent_outputs = state.get("agent_outputs") or {}
 
-        if not tool_result.get("success") or not tool_result.get("data"):
+        if mode == "multi_agent" and agent_outputs:
+            user_content += "\n\n[도구 실행 결과 (멀티 에이전트)]\n"
+            for agent_name, out in agent_outputs.items():
+                if out.get("success") and out.get("data"):
+                    user_content += (
+                        f"- 에이전트: {agent_name}\n"
+                        f"  결과: {json.dumps(out, ensure_ascii=False)}\n\n"
+                    )
+        elif state.get("tool_result") is not None:
+            tool_result = state["tool_result"] or {}
             user_content += (
-                "\n\n주의: 검색 결과가 없습니다. "
-                "사용자에게 친절하게 안내하고 대안을 제시해주세요."
+                f"\n\n[도구 실행 결과]\n"
+                f"도구: {state.get('tool_name')}\n"
+                f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
             )
+
+            if not tool_result.get("success") or not tool_result.get("data"):
+                user_content += (
+                    "\n\n주의: 검색 결과가 없습니다. "
+                    "사용자에게 친절하게 안내하고 대안을 제시해주세요."
+                )
 
     messages.append({"role": "user", "content": user_content})
 
@@ -270,7 +282,9 @@ def _build_response_prompt(student_name: Optional[str]) -> str:
 
 ## 응답 규칙
 - 친근하고 격려하는 톤, 필요시 이모지 사용 가능
-- 강습 정보는 구조화하여 보기 쉽게 (강습명, 종목, 난이도, 강사명 등)
+- 전달받은 모든 [도구 실행 결과] 또는 [도구 실행 결과 (멀티 에이전트)] 데이터를 절대로 생략하거나 무시하지 말고 응답에 유기적이고 충실하게 포함시키세요.
+- 실제 강습 목록 데이터(예: 'lesson' 결과 등)가 제공되었다면, 절대로 일반론이나 형식적인 말로 때우지 말고 제공된 실제 강습 항목(강습명, 종목, 난이도, 강사명 등)을 일일이 매치하여 보기 쉽게 구조화해 나열해야 합니다.
+- RAG FAQ 정보(예: 'faq' 결과 등)가 주어지면 규정 내용을 명확하고 상세하게 안내하세요.
 - 검색 결과가 없으면 솔직하게 말하고, 다른 종목/난이도 등 대안 제시
 - 마무리 문장으로 추가 도움을 제안
 - 도구 실행 결과의 JSON을 그대로 보여주지 말고, 자연스러운 한국어 문장으로 설명
@@ -294,19 +308,31 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
 
     user_content = f"사용자 질문: {state['user_message']}"
 
-    if intent != "general_inquiry" and state.get("tool_result") is not None:
-        tool_result = state["tool_result"] or {}
-        user_content += (
-            f"\n\n[도구 실행 결과]\n"
-            f"도구: {state.get('tool_name')}\n"
-            f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
-        )
+    if intent != "general_inquiry":
+        mode = state.get("routing_mode", "single_agent")
+        agent_outputs = state.get("agent_outputs") or {}
 
-        if not tool_result.get("success") or not tool_result.get("data"):
+        if mode == "multi_agent" and agent_outputs:
+            user_content += "\n\n[도구 실행 결과 (멀티 에이전트)]\n"
+            for agent_name, out in agent_outputs.items():
+                if out.get("success") and out.get("data"):
+                    user_content += (
+                        f"- 에이전트: {agent_name}\n"
+                        f"  결과: {json.dumps(out, ensure_ascii=False)}\n\n"
+                    )
+        elif state.get("tool_result") is not None:
+            tool_result = state["tool_result"] or {}
             user_content += (
-                "\n\n주의: 검색 결과가 없습니다. "
-                "사용자에게 친절하게 안내하고 대안을 제시해주세요."
+                f"\n\n[도구 실행 결과]\n"
+                f"도구: {state.get('tool_name')}\n"
+                f"결과: {json.dumps(tool_result, ensure_ascii=False)}"
             )
+
+            if not tool_result.get("success") or not tool_result.get("data"):
+                user_content += (
+                    "\n\n주의: 검색 결과가 없습니다. "
+                    "사용자에게 친절하게 안내하고 대안을 제시해주세요."
+                )
 
     messages.append({"role": "user", "content": user_content})
 

@@ -379,7 +379,7 @@ class ChatOrchestrator:
 
             return (
                 final_state.get("tools_used", []),
-                final_state.get("all_tool_results", {}),
+                final_state.get("agent_outputs", {}),
                 final_state.get(
                     "response",
                     "죄송합니다. 응답 생성에 실패했습니다.",
@@ -684,7 +684,7 @@ class ChatOrchestrator:
             "data": {
                 "response": full_response, # 최종 자연어 응답
                 "tools_used": state.get("tools_used", []), # 사용한 에이전트 목록
-                "all_tool_results": state.get("all_tool_results", {}), # 모든 에이전트 결과
+                "all_tool_results": state.get("agent_outputs", {}), # 모든 에이전트 결과
                 "total_tokens": state.get("total_tokens", 0), # 총 토큰 사용량
             },
         }
