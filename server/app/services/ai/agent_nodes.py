@@ -176,7 +176,7 @@ async def response_node(state: AgentState) -> Dict[str, Any]:
         if mode == "multi_agent" and agent_outputs:
             user_content += "\n\n[도구 실행 결과 (멀티 에이전트)]\n"
             for agent_name, out in agent_outputs.items():
-                if out.get("success") and out.get("data"):
+                if out.get("success") and out.get("failure_reason") is None:
                     user_content += (
                         f"- 에이전트: {agent_name}\n"
                         f"  결과: {json.dumps(out, ensure_ascii=False)}\n\n"
@@ -315,7 +315,7 @@ async def response_node_stream(state: AgentState) -> AsyncGenerator[Dict[str, An
         if mode == "multi_agent" and agent_outputs:
             user_content += "\n\n[도구 실행 결과 (멀티 에이전트)]\n"
             for agent_name, out in agent_outputs.items():
-                if out.get("success") and out.get("data"):
+                if out.get("success") and out.get("failure_reason") is None:
                     user_content += (
                         f"- 에이전트: {agent_name}\n"
                         f"  결과: {json.dumps(out, ensure_ascii=False)}\n\n"
