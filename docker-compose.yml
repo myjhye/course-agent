@@ -6,6 +6,8 @@ services:
     container_name: course-agent-facility-mcp
     env_file:
       - ./mcp_servers/facility_server/.env
+    ports:
+      - "8001:8001"
     expose:
       - "8001"
     restart: unless-stopped
@@ -17,6 +19,8 @@ services:
     container_name: course-agent-calendar-mcp
     env_file:
       - ./mcp_servers/calendar_server/.env
+    ports:
+      - "8002:8002"
     expose:
       - "8002"
     restart: unless-stopped
