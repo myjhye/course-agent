@@ -216,28 +216,35 @@ export default function ChatPage() {
 
         {/* 세션 목록 */}
         <div className="flex flex-col gap-1 mt-2 overflow-y-auto max-h-[calc(100vh-160px)] pr-1">
-          {sessions.map((s) => (
-            <div
-              key={s.session_id}
-              onClick={() => handleSelectSession(s.session_id)}
-              className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors ${
-                s.session_id === sessionId
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <span className="truncate flex-1 pr-2">
-                {s.title || '새 대화'}
-              </span>
-              <button
-                onClick={(e) => handleDeleteSession(e, s.session_id)}
-                className="hidden group-hover:flex items-center justify-center p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors"
-                title="대화 삭제"
-              >
-                <span className="material-symbols-outlined text-[18px]">delete</span>
-              </button>
+          {sessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 px-3 text-center text-xs text-slate-400 leading-relaxed">
+              <span className="material-symbols-outlined text-slate-300 text-[26px] mb-2">chat_bubble_outline</span>
+              대화 내역이 없습니다.<br />새 대화를 시작해 보세요!
             </div>
-          ))}
+          ) : (
+            sessions.map((s) => (
+              <div
+                key={s.session_id}
+                onClick={() => handleSelectSession(s.session_id)}
+                className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition-colors ${
+                  s.session_id === sessionId
+                    ? 'bg-primary/10 text-primary font-medium'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span className="truncate flex-1 pr-2">
+                  {s.title || '새 대화'}
+                </span>
+                <button
+                  onClick={(e) => handleDeleteSession(e, s.session_id)}
+                  className="hidden group-hover:flex items-center justify-center p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-slate-100 transition-colors"
+                  title="대화 삭제"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </aside>
 
