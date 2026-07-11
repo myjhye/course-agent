@@ -241,16 +241,59 @@ class ToolExecutor:
         try:
             # 순환 의존 방지를 위해 함수 내부에서 import
             from app.services.ai.embedding_service import search_similar
+            from app.services.ai.cohere_client import rerank_documents
+            from app.services.ai.langfuse_client import get_langfuse
 
-            rag_results = await search_similar(
+            # 1차 후보군 vector 검색 (top_k=10으로 조정)
+            candidates = await search_similar(
                 db=self.db,
                 query=keyword,
-                top_k=5,
+                top_k=10,
                 similarity_threshold=0.3,  # 유사도 0.3 미만이면 제외
                 trace_id=self.trace_id,    # Langfuse 동일 trace에 묶기
             )
 
-            if rag_results:
+            if candidates:
+                trace = get_langfuse()
+                rag_results = []
+                
+                # Langfuse 정량 모니터링 Span 생성 및 계측
+                if trace:
+                    span_kwargs = {
+                        "as_type": "span",
+                        "name": "cohere_rerank",
+                        "input": {
+                            "query": keyword,
+                            "candidates_count": len(candidates),
+                        }
+                    }
+                    if self.trace_id:
+                        span_kwargs["metadata"] = {"trace_id": self.trace_id}
+                        
+                    try:
+                        with trace.start_as_current_observation(**span_kwargs) as span:
+                            reranked = await rerank_documents(keyword, candidates, top_n=3)
+                            if reranked:
+                                span.update(
+                                    output={
+                                        "before": [d["title"] for d in candidates[:3]],
+                                        "after": [d["title"] for d in reranked[:3]],
+                                        "score_changes": [d.get("relevance_score", 0.0) for d in reranked]
+                                    }
+                                )
+                                rag_results = reranked
+                            else:
+                                # 리랭커 에러 등으로 빈 리스트 반환 시 원본 상위 3개로 세이프 폴백
+                                span.update(output={"status": "failed", "fallback": "candidates_top3"})
+                                rag_results = candidates[:3]
+                    except Exception as e:
+                        print(f"[RAG] Rerank Langfuse 관측 계측 에러: {e}, candidates 폴백")
+                        rag_results = candidates[:3]
+                else:
+                    # Langfuse가 비활성 상태인 로컬 단위 환경인 경우
+                    reranked = await rerank_documents(keyword, candidates, top_n=3)
+                    rag_results = reranked if reranked else candidates[:3]
+
                 return {
                     "success": True,
                     "data": [
@@ -258,12 +301,12 @@ class ToolExecutor:
                             "title": r["title"],
                             "content": r["content"],
                             "source_type": r["source_type"],
-                            "similarity": r["similarity"],
+                            "similarity": r.get("relevance_score") if r.get("relevance_score") is not None else r.get("similarity"),
                         }
                         for r in rag_results
                     ],
                     "keyword": keyword,
-                    "search_method": "vector",
+                    "search_method": "vector_rerank" if any("relevance_score" in r for r in rag_results) else "vector",
                 }
 
             return await self._search_faq_fallback(keyword)
