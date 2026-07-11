@@ -114,6 +114,7 @@ async def search_similar(
                 content,
                 source_type,
                 source_file,
+                metadata_json,
                 1 - (embedding <=> cast(:embedding AS vector)) AS similarity
             FROM knowledge_chunks
             WHERE embedding IS NOT NULL
@@ -148,6 +149,7 @@ async def search_similar(
                 "content": row.content,
                 "source_type": row.source_type,
                 "source_file": row.source_file,
+                "metadata_json": row.metadata_json,
                 "similarity": round(row.similarity, 4),
             }
             for row in filtered_rows

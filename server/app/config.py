@@ -39,3 +39,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+print(f"DEBUG_CONFIG: Loaded base_url is -> '{settings.base_url}'")

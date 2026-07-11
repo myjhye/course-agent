@@ -240,6 +240,8 @@ class ToolExecutor:
 
         try:
             # 순환 의존 방지를 위해 함수 내부에서 import
+            import json
+            from app.config import settings
             from app.services.ai.embedding_service import search_similar
             from app.services.ai.cohere_client import rerank_documents
             from app.services.ai.langfuse_client import get_langfuse
@@ -272,27 +274,27 @@ class ToolExecutor:
                         
                     try:
                         with trace.start_as_current_observation(**span_kwargs) as span:
-                            reranked = await rerank_documents(keyword, candidates, top_n=3)
+                            reranked = await rerank_documents(keyword, candidates, top_n=4)
                             if reranked:
                                 span.update(
                                     output={
-                                        "before": [d["title"] for d in candidates[:3]],
-                                        "after": [d["title"] for d in reranked[:3]],
+                                        "before": [d["title"] for d in candidates[:4]],
+                                        "after": [d["title"] for d in reranked[:4]],
                                         "score_changes": [d.get("relevance_score", 0.0) for d in reranked]
                                     }
                                 )
                                 rag_results = reranked
                             else:
-                                # 리랭커 에러 등으로 빈 리스트 반환 시 원본 상위 3개로 세이프 폴백
-                                span.update(output={"status": "failed", "fallback": "candidates_top3"})
-                                rag_results = candidates[:3]
+                                # 리랭커 에러 등으로 빈 리스트 반환 시 원본 상위 4개로 세이프 폴백
+                                span.update(output={"status": "failed", "fallback": "candidates_top4"})
+                                rag_results = candidates[:4]
                     except Exception as e:
                         print(f"[RAG] Rerank Langfuse 관측 계측 에러: {e}, candidates 폴백")
-                        rag_results = candidates[:3]
+                        rag_results = candidates[:4]
                 else:
                     # Langfuse가 비활성 상태인 로컬 단위 환경인 경우
-                    reranked = await rerank_documents(keyword, candidates, top_n=3)
-                    rag_results = reranked if reranked else candidates[:3]
+                    reranked = await rerank_documents(keyword, candidates, top_n=4)
+                    rag_results = reranked if reranked else candidates[:4]
 
                 return {
                     "success": True,
@@ -302,6 +304,14 @@ class ToolExecutor:
                             "content": r["content"],
                             "source_type": r["source_type"],
                             "similarity": r.get("relevance_score") if r.get("relevance_score") is not None else r.get("similarity"),
+                            "image_url": (
+                                f"{settings.base_url}{raw_url}"
+                                if (raw_url := (
+                                    json.loads(r["metadata_json"]).get("image_url")
+                                    if r.get("metadata_json") and isinstance(r["metadata_json"], str)
+                                    else (r["metadata_json"].get("image_url") if isinstance(r.get("metadata_json"), dict) else None)
+                                )) else None
+                            ),
                         }
                         for r in rag_results
                     ],
