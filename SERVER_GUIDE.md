@@ -106,6 +106,9 @@ sequenceDiagram
 * **`embedding_service.py`**
   * **역할**: OpenAI 임베딩 API 연동 및 PostgreSQL의 `pgvector` 코사인 유사도 연산 쿼리를 직접 수행하여 RAG(지식 검색)의 원천 조회를 대행합니다.
   * **연결 관계**: `faq_agent.py`의 도구로 실행됩니다.
+* **`openai_vision_client.py`**
+  * **역할**: OpenAI GPT-4o Vision API를 호출하여 정적 대표 이미지들을 비동기 한글 요약 및 세부 특징 묘사 데이터로 추출하여 반환하는 이미지 분석 전용 파일입니다.
+  * **연결 관계**: `seed_image_knowledge.py` 시딩 스크립트 실행 시 호출됩니다.
 
 ### 2.4 개별 전문 서브 에이전트 (`server/app/services/ai/agents/`)
 * **`base.py`**
@@ -119,3 +122,18 @@ sequenceDiagram
   * **역할**: "규정 및 정책 안내"에 특화된 FAQ 에이전트이며, `pgvector` RAG 지식 검색 기능 도구를 품고 있습니다.
 * **`facility_agent.py`**
   * **역할**: "전국 공공 체육시설 지도 기반 정보 검색"에 특화된 에이전트이며, MCP 클라이언트 원격 연동 도구를 사용합니다.
+* **`calendar_agent.py`**
+  * **역할**: "캘린더 일정 추가 및 확인"에 특화된 에이전트이며, MCP 클라이언트 구글 캘린더 연동 도구를 사용합니다.
+
+---
+
+## 3. RAG 2단계 운용 및 검증 스크립트
+
+RAG 2단계의 이미지 RAG 정보 시딩 및 단위 검증을 위한 핵심 스크립트입니다:
+
+* **`server/scripts/seed_image_knowledge.py`**
+  * **설명**: `static/images/` 디렉토리 하위의 수영장, 테니스, 필라테스 대표 이미지 3장에 대해 OpenAI Vision API를 호출하여 한글 요약문을 추출하고, 이를 1536차원 임베딩 벡터로 변환하여 pgvector `knowledge_chunks` 테이블에 `source_type="image"` 및 이미지 경로 메타데이터(`metadata_json`)와 함께 시딩하는 데이터 적재 전용 스크립트입니다.
+  * **실행**: `python server/scripts/seed_image_knowledge.py`
+* **`server/tests/test_image_rag.py`**
+  * **설명**: 2-Stage Retrieval(Cohere Rerank v3) 및 이미지 RAG 파이프라인의 안전성을 입증하기 위해 마련된 4대 핵심 검증 통합 테스트 코드입니다.
+  * **실행**: `pytest server/tests/test_image_rag.py`

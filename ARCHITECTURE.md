@@ -191,3 +191,30 @@ sequenceDiagram
 | `mcp_servers/facility_server/app/cache.py` | TTL 캐시 및 중복 호출 잠금 |
 | `mcp_servers/calendar_server/app/main.py` | Calendar FastMCP 진입점 및 도구 등록 |
 | `mcp_servers/calendar_server/app/config.py` | Calendar 설정 및 Pydantic Settings |
+
+<br>
+
+## RAG 2단계 (2-Stage Retrieval & Image RAG)
+
+RAG 지식 검색의 신뢰성과 차원을 고도화하기 위해 도입된 핵심 RAG 아키텍처 구조입니다.
+
+### 1) 2-Stage Retrieval (Cohere Rerank v3)
+단순 코사인 유사도 검색의 한계를 보완하기 위해 2단계 검색 구조를 채택했습니다:
+1. **1차 검색 (Retrieval)**: PostgreSQL + pgvector를 사용하여 사용자 질문 벡터와 가장 일치하는 지식 조각(임베딩) 후보군을 코사인 유사도 기반으로 `top_k=10`건 추출합니다.
+2. **2차 검색 (Reranking)**: 추출된 10개의 문서 후보군을 `Cohere Rerank v3 (rerank-multilingual-v3.0)` API로 전달하여 질문과의 실제 문맥상 연관 점수를 다시 계산하고, 가장 점수가 높은 상위 `top_n=4`개의 문서를 최종 RAG 지식으로 확정합니다.
+
+### 2) Image Summary RAG Pipeline
+멀티모달 임베딩 대신, 이미지를 텍스트 요약 정보로 변환하여 기존 RAG 공간에 통합 연계하는 기법을 구현했습니다.
+```mermaid
+graph LR
+    Images[static/images/ 스포츠 전경 이미지] --> Vision[GPT-4o Vision 분석]
+    Vision --> Summary[한글 텍스트 요약문 추출]
+    Summary --> Embedding[text-embedding-3-small]
+    Embedding --> DB[(pgvector DB 적재 / source_type='image')]
+    
+    User[수강생 질문: 사진 보여줘] --> Retrieval[2-Stage RAG 검색]
+    DB --> Retrieval
+    Retrieval --> Prepend[Settings.base_url 절대경로 조립]
+    Prepend --> Response[ReactMarkdown 이미지 인라인 렌더링]
+```
+* **CORS 예방 절대 경로**: 로컬 프론트엔드 포트(`5173`)와 백엔드 포`8000`)의 포트 분리 환경에서 정적 경로 깨짐을 막기 위해, 백엔드 반환 시 `settings.base_url`를 동적으로 결합한 절대 경로(`http://localhost:8000/static/images/...`)로 이미지를 반환합니다.

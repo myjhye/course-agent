@@ -18,9 +18,9 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 - **Self-Correction 재라우팅** — 에이전트 결과 부실 시 다른 도메인으로 자동 재분배 (예: lesson 검색 실패 -> faq로 자동 폴백, calendar 실패 -> lesson으로 폴백)
 - **MCP 클라이언트/서버 양방향 구현** — 공공 체육시설 API(KSPO)와 Google Calendar API를 MCP 도구로 노출하는 독립 서버 구축 및 Course Agent의 MCP 클라이언트 연동
 - **SSE 토큰 스트리밍** — LangGraph 노드별 실시간 상태 + GPT 토큰 스트림
-- **RAG (pgvector)** — 125개 지식 청크 임베딩 + 코사인 유사도 검색, ILIKE 폴백 지원
-- **Langfuse 관측성** — 모든 에이전트 노드·LLM 호출 end-to-end trace
-- **마이크로서비스 인프라** — docker-compose로 로컬 통합, Railway internal DNS로 프로덕션 서비스 간 통신
+- **2-Stage RAG & Image RAG (pgvector + Cohere Rerank v3)** — pgvector 코사인 유사도 1차 검색 후 Cohere Rerank v3로 상위 문서 정밀 리랭킹(top_n=4). 스포츠 시설 전경 이미지를 GPT-4o Vision으로 사전 요약하고 임베딩화하여 RAG 공간에 통합 적재(Image Summary RAG)
+- **Langfuse 관측성** — 모든 에이전트 노드·LLM 호출 및 Rerank 결과 연동 히스토리를 end-to-end Span으로 계측
+- **마이크로서비스 인프라** — docker-compose로 로컬 통합, Railway internal DNS로 프로덕션 서비스 간 통신, 절대 경로 이미지 결합 반환으로 CORS 트러블 방지
 
 ## 데모 시나리오
 
@@ -31,6 +31,7 @@ LangGraph 기반 멀티에이전트 + MCP 클라이언트/서버를 갖춘 AI �
 | `"서울에서 수영장 알려줘"` | Supervisor -> `facility` -> MCP 호출 -> KSPO 공공 API 결과 |
 | `"내일 오전 10시에 테니스 강습 일정 구글 캘린더에 등록해줘"` | Supervisor -> `calendar` -> MCP 호출 -> 구글 캘린더 이벤트 등록 성공 |
 | `"내일 스케줄 확인해줘"` | Supervisor -> `calendar` -> MCP 호출 -> 구글 캘린더 일정 조회 |
+| `"수영장, 테니스장, 필라테스실 사진 다 보여주세요"` | Supervisor -> `faq` -> **2-Stage RAG** -> 다중 이미지 RAG 3장 인라인 출력 |
 | `"파쿠르 강습 있어?"` | Supervisor -> `lesson` 실패 -> **재라우팅** -> `faq` -> 대안 안내 |
 | `"강남에서 수영 배우고 싶은데 근처 수영장도 알려줘"` | Supervisor -> `multi_agent: [lesson, facility]` |
 
@@ -127,7 +128,7 @@ sequenceDiagram
 | 언어/프레임워크 | Python 3.11+, FastAPI, SQLAlchemy(async) |
 | 에이전트 | LangGraph (Supervisor 패턴) |
 | LLM | OpenAI GPT-4o-mini |
-| RAG | pgvector(HNSW), text-embedding-3-small |
+| RAG | pgvector(HNSW), text-embedding-3-small, Cohere Rerank v3, OpenAI Vision API |
 | 관측 | Langfuse |
 | 스트리밍 | sse-starlette |
 | MCP | fastmcp.Client |
@@ -168,6 +169,7 @@ course-agent/
 │   │   │       ├── embedding_service.py # RAG 임베딩 생성 + pgvector 검색
 │   │   │       ├── langfuse_client.py   # Langfuse 싱글톤
 │   │   │       ├── llm_client.py        # OpenAI 클라이언트
+│   │   │       ├── openai_vision_client.py # OpenAI Vision API 호출 클라이언트 (시설 이미지 요약)
 │   │   │       └── agents/
 │   │   │           ├── base.py          # make_subagent 팩토리
 │   │   │           ├── lesson_agent.py
@@ -177,7 +179,8 @@ course-agent/
 │   │   │           └── calendar_agent.py  # 구글 캘린더 연동 서브에이전트
 │   │   └── main.py
 │   ├── knowledge_base/                  # RAG 지식 (md 19개, 청크 125개)
-│   ├── scripts/                         # load_knowledge.py, seed_data.py
+│   ├── static/                          # 이미지 정적 호스팅 리소스 (swimming_pool, tennis, pilates)
+│   ├── scripts/                         # load_knowledge.py, seed_data.py, seed_image_knowledge.py (이미지 RAG 시딩)
 │   ├── alembic/                         # DB 마이그레이션
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -213,7 +216,7 @@ course-agent/
 | Supervisor | 사용자 의도를 분석해 에이전트 계획 수립 (direct/single/multi) |
 | lesson_agent | 강습 검색·상세 조회 (DB) |
 | enrollment_agent | 수강 현황·맞춤 추천 (DB) |
-| faq_agent | FAQ RAG 검색 (pgvector + ILIKE 폴백) |
+| faq_agent | FAQ RAG 및 Image Summary RAG 검색 (pgvector 1차 코사인 검색 + Cohere Rerank v3 2차 리랭킹 + 절대 경로 이미지 출력) |
 | facility_agent | 공공 체육시설 검색 (MCP -> KSPO API) |
 | calendar_agent | 구글 캘린더 일정 추가/확인 (MCP -> Google Calendar API) |
 | Aggregator | 에이전트 결과 통합·검증 (`is_valid`) |
