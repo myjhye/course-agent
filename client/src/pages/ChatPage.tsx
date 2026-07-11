@@ -346,7 +346,19 @@ export default function ChatPage() {
                   <span className="text-xs font-semibold text-slate-500 ml-1">Course Agent</span>
                   <div className="bg-white p-5 rounded-2xl rounded-tl-none shadow-sm text-slate-800 text-sm sm:text-base leading-relaxed border border-slate-100">
                     <div className="prose prose-sm max-w-none prose-slate">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <ReactMarkdown
+                        components={{
+                          img: ({ node, ...props }) => (
+                            <img
+                              {...props}
+                              className="max-w-[280px] sm:max-w-[360px] h-auto rounded-xl shadow-sm border border-slate-100 my-3 hover:shadow-md transition-shadow duration-300"
+                              alt={props.alt || '시설 이미지'}
+                            />
+                          ),
+                        }}
+                      >
+                        {msg.content}
+                      </ReactMarkdown>
                     </div>
                     
                     {/* Tool Badge */}
