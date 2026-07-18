@@ -89,9 +89,10 @@ def make_subagent(
             "attempts": execution_count,
         }
 
-        # 실행된 에이전트 목록 히스토리 기록
+        # 실행된 에이전트 목록 히스토리 기록 (실제 유효한 결과를 도출한 경우에만 추가)
         tools_used = list(state.get("tools_used", []))
-        tools_used.append(name)
+        if is_ok:
+            tools_used.append(name)
 
         # response_node 및 response_node_stream 등 기존 비-멀티에이전트 호환성을 위한 반환 처리
         return {
