@@ -1,0 +1,169 @@
+[
+  {
+    "id": "Q01",
+    "category": "simple",
+    "question": "환불 규정 알려줘",
+    "ground_truth_relevance": {
+      "환불 규정": 3
+    },
+    "reasoning": "사용자가 직접적으로 환불 규정을 물었으므로 '환불 규정' 섹션이 3점 정답임."
+  },
+  {
+    "id": "Q02",
+    "category": "simple",
+    "question": "결제 수단 어떤 거 지원해",
+    "ground_truth_relevance": {
+      "결제 방법": 3
+    },
+    "reasoning": "결제 방식에 관한 질문이므로 '결제 방법' 섹션이 3점 정답임."
+  },
+  {
+    "id": "Q03",
+    "category": "simple",
+    "question": "주차가 가능한가요",
+    "ground_truth_relevance": {
+      "주차가 가능한가요": 3
+    },
+    "reasoning": "주차 가능 여부를 묻는 명확한 키워드 질문이므로 '주차가 가능한가요' 섹션이 3점 정답임."
+  },
+  {
+    "id": "Q04",
+    "category": "paraphrased",
+    "question": "취소하면 돈 돌려받을 수 있나요?",
+    "ground_truth_relevance": {
+      "환불 규정": 3,
+      "수강 연기 및 변경": 1
+    },
+    "reasoning": "'돈 돌려받기'는 환불의 패러프레이징 표현이므로 '환불 규정'이 핵심 3점 정답임."
+  },
+  {
+    "id": "Q05",
+    "category": "paraphrased",
+    "question": "비번 까먹었을 때는 어떻게 해?",
+    "ground_truth_relevance": {
+      "비밀번호를 잊어버렸어요": 3
+    },
+    "reasoning": "'비번 까먹음'은 비밀번호 분실의 구어체 표현이므로 '비밀번호를 잊어버렸어요' 섹션이 3점 정답임."
+  },
+  {
+    "id": "Q06",
+    "category": "paraphrased",
+    "question": "수업 가기 전에 챙겨야 할 옷이나 장비",
+    "ground_truth_relevance": {
+      "강습 준비물": 3
+    },
+    "reasoning": "'챙겨야 할 옷이나 장비'는 준비물의 패러프레이징이므로 '강습 준비물'이 3점 정답임."
+  },
+  {
+    "id": "Q07",
+    "category": "multi_answer",
+    "question": "수영이랑 필라테스 레슨 수업 정보 다 알려줘",
+    "ground_truth_relevance": {
+      "수영": 3,
+      "필라테스": 3
+    },
+    "reasoning": "수영과 필라테스 두 종목의 안내가 모두 필요하므로 두 섹션 모두 3점 정답임."
+  },
+  {
+    "id": "Q08",
+    "category": "multi_answer",
+    "question": "결제 방법이랑 친구 할인 적용 방법 같이 알려줘",
+    "ground_truth_relevance": {
+      "결제 방법": 3,
+      "친구와 함께 등록하면 할인이 되나요": 3,
+      "할인 및 프로모션": 2
+    },
+    "reasoning": "결제 수단과 동반 할인이라는 복수 정답 정보가 요구되므로 두 개 이상의 청크가 정답임."
+  },
+  {
+    "id": "Q09",
+    "category": "multi_answer",
+    "question": "수강 연기하는 거랑 환불받는 조건 둘 다 알려줘",
+    "ground_truth_relevance": {
+      "수강 연기 및 변경": 3,
+      "환불 규정": 3
+    },
+    "reasoning": "연기와 환불이라는 독립된 두 규정이 동시에 요구되므로 다중 정답임."
+  },
+  {
+    "id": "Q10",
+    "category": "broad",
+    "question": "수업 관련해서 알아야 할 것들",
+    "ground_truth_relevance": {
+      "수강 신청 방법": 3,
+      "강습 준비물": 3,
+      "수업 시간표를 어디서 확인할 수 있나요": 2
+    },
+    "reasoning": "광범위하고 모호한 질문이므로 신청법, 준비물, 시간표 관련 지식이 랭킹 상위에 노출되는지가 핵심임."
+  },
+  {
+    "id": "Q11",
+    "category": "broad",
+    "question": "할인 혜택 관련 정보",
+    "ground_truth_relevance": {
+      "할인 및 프로모션": 3,
+      "친구와 함께 등록하면 할인이 되나요": 3
+    },
+    "reasoning": "모든 할인 정보 청크가 상위에 올바르게 랭킹되어야 하는 모호한 탐색형 질문임."
+  },
+  {
+    "id": "Q12",
+    "category": "broad",
+    "question": "수영 강습 시작할 때 참고사항",
+    "ground_truth_relevance": {
+      "수영": 3,
+      "강습 준비물": 2,
+      "강습 장소는 어디인가요": 2
+    },
+    "reasoning": "수영 종목 안내 및 관련 준비물/장소 지식이 상위에 랭킹되어야 함."
+  },
+  {
+    "id": "Q13",
+    "category": "edge_case",
+    "question": "그거 있잖아 그 시간표 관련 거",
+    "ground_truth_relevance": {
+      "수업 시간표를 어디서 확인할 수 있나요": 3
+    },
+    "reasoning": "극도의 구어체 및 지시 대명사 섞인 모호한 질문에서도 '시간표' 섹션을 찾아내야 함."
+  },
+  {
+    "id": "Q14",
+    "category": "edge_case",
+    "question": "환블 전액 밭으려면",
+    "ground_truth_relevance": {
+      "환불 규정": 3
+    },
+    "reasoning": "'환블 전액 밭으려면'이라는 오타 포함 쿼리에서도 '환불 규정' 청크를 매칭해야 함."
+  },
+  {
+    "id": "Q15",
+    "category": "edge_case",
+    "question": "얼마나 일찍 가야 하나요 수영장",
+    "ground_truth_relevance": {
+      "수영": 3,
+      "강습 준비물": 2
+    },
+    "reasoning": "도착 시간 관련 구어체 질문에서 수영 및 준비물 안내를 매칭해야 함."
+  },
+  {
+    "id": "Q16",
+    "category": "negative",
+    "question": "파쿠르 익스트림 강습 수강료",
+    "ground_truth_relevance": {},
+    "reasoning": "DB에 없는 파쿠르 관련 질문이므로 정답 문서가 없는 것이 정상임 (Hits = 0)."
+  },
+  {
+    "id": "Q17",
+    "category": "negative",
+    "question": "스쿠버 다이빙 자격증 과정 있나요",
+    "ground_truth_relevance": {},
+    "reasoning": "DB에 다이빙 자격증 내용이 없으므로 정답 문서 없음이 정답임."
+  },
+  {
+    "id": "Q18",
+    "category": "negative",
+    "question": "암벽 등반 장비 대여료",
+    "ground_truth_relevance": {},
+    "reasoning": "암벽 등반 장비 대여 지식이 없으므로 Hit 0이어야 함."
+  }
+]
